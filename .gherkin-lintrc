@@ -20,7 +20,7 @@
 
   "no-files-without-scenarios": "off",
   "allowed-tags": [
-    "on", {"tags": ["@caho還沒做", "@maherekayto做好了"]}
+    "on", {"tags": ["@規格要討論", "@caho還沒做", "@maherekayto做好了"]}
   ]
 }
 

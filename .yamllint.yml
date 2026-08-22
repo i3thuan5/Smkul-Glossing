@@ -9,3 +9,5 @@ rules:
 
 ignore:
   - node_modules/
+  # kithann/ 是語料與程式產出,不屬於專案原始碼,不檢查格式。
+  - kithann/
