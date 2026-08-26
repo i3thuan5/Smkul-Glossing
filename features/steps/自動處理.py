@@ -1,19 +1,18 @@
-"""自動處理（字元正規化、排版分析、註解殘留、時間碼）的 behave step。
+"""自動處理（字元正規化、排版分析、時間碼）的 behave step。
 
 每個 scenario 自己帶著需要的資料，所以不需要語料就能跑。
 """
 
-from behave import given, then, when
+from behave import then, when
 
 from scripts.smkul.parser import (
+    build_entry,
     collapse_spaces,
     normalize_en_dash,
     normalize_text,
     parse_text,
     parse_timecode,
-    strip_comments,
 )
-from scripts.smkul.parser import build_entry
 
 
 @when('原本的一行是 "{line}"')
@@ -67,37 +66,6 @@ def step_檔頭註記(context):
     assert got == expect, "\n預期:" + str(expect) + "\n實際:" + str(got)
 
 
-@given("docx 的審閱註解是")
-def step_註解(context):
-    comments = {}
-    for row in context.table:
-        comments[row["字母"].strip()] = row["內容"].strip()
-    context.comments = comments
-
-
-@when("讀入這幾行有註解殘留")
-def step_讀入註解(context):
-    context.result = strip_comments(
-        context.text, None, "feature", getattr(context, "comments", None))
-
-
-def _tidy(text):
-    """比對的時候，尾端的空行與行尾空白不算差異。"""
-    lines = []
-    for line in text.split("\n"):
-        lines.append(line.rstrip())
-    while lines and not lines[-1]:
-        lines.pop()
-    return "\n".join(lines)
-
-
-@then("清掉註解後是")
-def step_清掉(context):
-    got = _tidy(context.result)
-    expect = _tidy(context.text)
-    assert got == expect, "\n預期:\n" + expect + "\n實際:\n" + got
-
-
 @when('時間碼行是 "{line}"')
 def step_時間碼(context, line):
     context.timecode = parse_timecode(line)
@@ -138,11 +106,11 @@ def step_時間顛倒(context):
 
 @when('原文是 "{source}"，切分是 "{segmentation}"')
 def step_原文切分(context, source, segmentation):
-    from scripts.smkul.parser import (bare_form, mismatch_detail,
+    from scripts.smkul.parser import (matches, mismatch_detail,
                                       mismatch_kind, punctuation_of)
     context.source = source
     context.segmentation = segmentation
-    context.same = bare_form(source) == bare_form(segmentation)
+    context.same = matches(source, segmentation)
     context.mismatch_kind = mismatch_kind(source, segmentation)
     context.mismatch_detail = mismatch_detail(source, segmentation)
     context.punctuation_diff = (

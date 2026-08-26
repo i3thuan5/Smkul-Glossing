@@ -50,7 +50,7 @@ Claude Code **毋准**執行下底ê git 指令（會影響 staged 檔案、comm
 
 ## 報告ê例
 
-報告內底逐項自動處理攏愛附**3 組例**,逐組愛有「原句子」佮「處理後ê句子」,koh愛註明是佗一个檔案、第幾組。
+報告內底ê「自動處理」佮「構詞判斷困難」這兩章,逐項干焦寫**摘要佮筆數**,例莫複製入去報告,直接註明「詳見 `features/xxx.feature`」。**3 組例**攏寫tī feature ê Scenario 註解(逐組愛有「原句子」佮「處理後ê句子」,koh愛註明是佗一个檔案、第幾組),規則佮例干焦一份,袂走精。
 
 ## 統計欄位ê定義
 
@@ -69,3 +69,9 @@ Feature ê例愛照語言優先序揀:**例 1 阿美(秀姑巒→海岸→南勢
 **難判斷佮已知判毋著ê案例,愛排tī feature ê上尾**,逐个各做一條 scenario,標 `@規格要討論`,而且tī註解寫清楚:出處、為啥物歹判斷、程式這馬判按怎、應該愛是按怎。Then 寫ê是程式這馬ê輸出(毋是正確答案),予人通好逐條確認;程式修好了後才轉來改表格佮標籤。
 
 `features/*.feature` 愛過 `npx gherkin-lint`(設定 tī `.gherkin-lintrc`,CI 有走,看 `.travis.yml` ê「Check Gherkin format」)。注意伊ê縮排慣例佮一般無仝:Scenario 0 格、Step 2 格、表格 4 格。
+
+## OpenSpec change 文件ê標點
+
+`openspec/changes/**/*.md`(proposal、design、specs、tasks)ê**內文**,標點愛用全形:逗號「，」、冒號「：」、分號「；」、括號「（）」。毋通用半形。
+
+仝款,反引號內底(程式碼、語料、路徑、YAML)莫振動;另外 openspec 家己ê結構標頭(`### Requirement:`、`#### Scenario:`、`**WHEN**`、`**Reason**:`、`**Migration**:`)ài留半形,伊ê parser 才認得。

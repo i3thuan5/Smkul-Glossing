@@ -1,10 +1,6 @@
-# corpus-export Specification
+# corpus-export Delta
 
-## Purpose
-
-把通過驗證的語料匯出成單一 YAML(華語 key、詞素/gloss 配對結構),並產生 markdown 報告,含「請對方處理」專章供會議逐項討論。全部產出放 `kithann/out/`(不進版控)。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 單一 YAML 匯出
 
@@ -84,7 +80,7 @@
 - **WHEN** 產生報告
 - **THEN** 報告載明 YAML 由 docx 產生而非 txt，並說明註解不會混入的理由
 
-#### Scenario: 構詞判斷困難專章
+#### Scenario: 標記不在清單聚合統計
 
 - **WHEN** 語料有詞素判不出詞根
 - **THEN** 報告有「構詞判斷困難」一章，依兩種情形分節摘要＋統計表，指向 `features/構詞判定.feature`；總覽不再有「標記不在清單」問題類型
@@ -126,44 +122,3 @@
 
 - **WHEN** 本次執行某項處理筆數為 0（如語料已無全形 `＝`）
 - **THEN** 該項仍列出，影響筆數標示為 0，不隱藏
-
-### Requirement: 報告一律用華語
-
-程式產生的報告 SHALL 一律用**華語**書寫,不用台語——報告是給語料提供方看的。程式碼的註解、docstring、變數名、測試名 SHALL 同樣用華語,因為對方也會看程式碼。
-
-#### Scenario: 報告用華語
-
-- **WHEN** 產生任一份報告
-- **THEN** 章節標題、說明文字、問題分類名稱都是華語
-
-### Requirement: 對照式差異分兩行呈現
-
-需要兩邊對照的項目(txt/docx 的內容差異、原文/切分的比對)SHALL 把兩邊各自放在獨立的子項,不擠在同一行,方便逐字對照。
-
-#### Scenario: 內容差異分兩行
-
-- **WHEN** 報告某組的 txt 與 docx 第 5 行不同
-- **THEN** 呈現為「第 5 行不同」加上兩個子項 `- txt:…` 與 `- docx:…`
-
-### Requirement: 只因註解殘留造成的差異不重複列出
-
-若某行的 txt 與 docx 差異**只是**註解錨點或註解本文造成的,SHALL NOT 列入「差異明細」——這些已經在「docx 審閱註解」章完整呈現。此規則把 docx↔txt 的差異從 253 筆降到 17 筆,剩下的都是真正的內容不一致。
-
-#### Scenario: 錨點差異不重複列
-
-- **WHEN** txt 為 `主焦.來=[c]我們.主格`、docx 為 `主焦.來=我們.主格`,去掉錨點後兩者相同
-- **THEN** 不列入差異明細,只在「docx 審閱註解」章呈現
-
-#### Scenario: 真正的內容差異仍要列
-
-- **WHEN** 布農巒群 2 第 1 組 txt 為 `主題標=語氣詞`、docx 為 `主題標記=語氣詞`(txt 少一個字)
-- **THEN** 列入差異明細
-
-### Requirement: exit code
-
-檢查程式 SHALL 在有任何錯誤(乙類)時以非 0 exit code 結束、全部通過時為 0,warning 不影響 exit code。
-
-#### Scenario: 有錯誤時非零
-
-- **WHEN** 語料含至少一筆錯誤(如海岸 2 的 12 處孤兒時間碼)
-- **THEN** 程式輸出報告後以非 0 結束

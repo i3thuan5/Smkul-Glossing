@@ -8,7 +8,8 @@ ODS 就能跑。Given 的表格欄位與內容都照 ODS,step 再用與正式程
 from behave import given, then, when
 
 from scripts.smkul.entry import Entry
-from scripts.smkul.markers import markers_of
+from scripts.smkul.markers import (affix_forms_of, circumfixes_of,
+                                   markers_of)
 from scripts.smkul.rules import build_words
 
 
@@ -22,6 +23,8 @@ def step_標記清單(context, language):
         rows.append(values)
     context.language = language
     context.allowed = markers_of(rows)
+    context.circumfixes = circumfixes_of(rows)
+    context.affix_forms = affix_forms_of(rows)
 
 
 @when('切分是 "{segmentation}"，glossing 是 "{gloss}"')
@@ -33,7 +36,12 @@ def step_判定(context, segmentation, gloss):
     context.segmentation = segmentation
     context.gloss = gloss
     # 沒有 Given 的 scenario 表示判定不查表,清單當做空的。
-    context.words = build_words(entry, getattr(context, "allowed", set()))
+    context.words = build_words(
+        entry,
+        getattr(context, "allowed", set()),
+        getattr(context, "circumfixes", set()),
+        getattr(context, "affix_forms", None),
+    )
 
 
 @then("判定結果是")
@@ -45,7 +53,8 @@ def step_結果(context):
                     morpheme.attachment.value))
     expect = []
     for row in context.table:
-        expect.append((row["形"], row["義"], row["構詞"]))
+        # 表格內底寫做（無法判斷），程式ê值是「無法判斷」。
+        expect.append((row["形"], row["義"], row["構詞"].strip("（）")))
     assert got == expect, (
         "\n切分:" + context.segmentation +
         "\nglossing:" + context.gloss +
