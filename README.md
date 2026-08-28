@@ -45,7 +45,7 @@ pip install tox
 
 `kithann/giliau/` 底下是對方提供的族語語料(docx 與 txt 成對)。兩支程式檢查語料、產生報告,產出都放 `kithann/out/`(不進版控)。
 
-標註格式與符號規則整理在 [docs/glossing-rules.md](docs/glossing-rules.md)。
+標註規則寫在 [features/](features/) 的 `*.feature`,一條規則一份,程式與規格用同一份。語料的格式(四行結構、時間碼、切分符號、特殊符號、外來語標籤、目錄與 ODS sheet 的對應)寫在 `kithann/out/glossing_report.md` 的「語料格式說明」章,每次跑程式重新產生。
 
 ### 檢查 docx 與 txt 是否一致
 

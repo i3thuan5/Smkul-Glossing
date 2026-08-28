@@ -1,16 +1,15 @@
 """詞根與詞綴判定的 behave step。
 
-每個 scenario 自己帶著原語會標記清單的原始資料,所以不需要語料與
-ODS 就能跑。Given 的表格欄位與內容都照 ODS,step 再用與正式程式
-同一支 markers_of() 抽出合法標記。
+每個 scenario 自己帶著《常用構詞標記清單》的原始資料，所以不需要
+語料與 ODS 就能跑。Given 的表格欄位與內容都照 ODS，step 再用與正式
+程式同一支 MarkerList.from_rows() 讀成清單。
+規格寫在 features/構詞判定.feature。
 """
 
 from behave import given, then, when
 
-from scripts.smkul.entry import Entry
-from scripts.smkul.markers import (affix_forms_of, circumfixes_of,
-                                   markers_of)
-from scripts.smkul.rules import build_words
+from scripts.smkul.markers import MarkerList
+from scripts.smkul.rules import analyse_word
 
 
 @given("在{language}常用構詞標記清單中")
@@ -21,39 +20,29 @@ def step_標記清單(context, language):
         for heading in context.table.headings:
             values.append(row[heading].strip())
         rows.append(values)
-    context.language = language
-    context.allowed = markers_of(rows)
-    context.circumfixes = circumfixes_of(rows)
-    context.affix_forms = affix_forms_of(rows)
+    context.markers = MarkerList.from_rows(rows)
 
 
 @when('切分是 "{segmentation}"，glossing 是 "{gloss}"')
 def step_判定(context, segmentation, gloss):
-    entry = Entry(
-        number="1", start="0", end="1", path="feature",
-        segmentation=segmentation, gloss=gloss,
-    )
     context.segmentation = segmentation
     context.gloss = gloss
-    # 沒有 Given 的 scenario 表示判定不查表,清單當做空的。
-    context.words = build_words(
-        entry,
-        getattr(context, "allowed", set()),
-        getattr(context, "circumfixes", set()),
-        getattr(context, "affix_forms", None),
-    )
+    # 沒有 Given 的 scenario 表示判定不查表，清單當做空的。
+    markers = getattr(context, "markers", None)
+    if markers is None:
+        markers = MarkerList.empty()
+    context.morphemes = analyse_word(segmentation, gloss, markers)
 
 
 @then("判定結果是")
 def step_結果(context):
-    assert len(context.words) == 1, "應該只有一個詞:" + context.segmentation
     got = []
-    for morpheme in context.words[0].morphemes:
+    for morpheme in context.morphemes:
         got.append((morpheme.form, morpheme.gloss,
                     morpheme.attachment.value))
     expect = []
     for row in context.table:
-        # 表格內底寫做（無法判斷），程式ê值是「無法判斷」。
+        # 表格裡寫做（無法判斷），程式的值是「無法判斷」。
         expect.append((row["形"], row["義"], row["構詞"].strip("（）")))
     assert got == expect, (
         "\n切分:" + context.segmentation +

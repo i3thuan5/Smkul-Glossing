@@ -1,0 +1,13 @@
+1.
+0:00:07.460,0:00:10.020
+saikin hai  inak ngan hai tupaun tu Tahai
+saikin        hai                  inak                 ngan         hai                 tupa-un        tu         Tahai
+我.主格        主題標記        我.所有格        名字        主題標記        說-受焦         連繫詞        人名        
+我的名字叫大海
+0000
+2.
+0:00:11.120,0:00:13.580
+ismahasan islituan tainkasia mas takistalan
+ismahasan         islituan         tain-ka-sia                 mas         takistalan
+氏族名                大氏族名        來自-做-處所格        斜格        氏族名        
+家族姓氏

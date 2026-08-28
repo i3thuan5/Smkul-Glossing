@@ -1,0 +1,14 @@
+26
+00:02:52,305 --> 00:02:54,808
+timun a mare’a tja ’a’edriyan ui, 
+timun                 a                 ma-re’a         tja=’a’edrian         ui 
+你們.中性格        連繫詞        主焦-所有        我們.包含.屬格=小孩        言談標記身為孩子的你們，
+
+
+34
+00:03:34,614 --> 00:03:39,19
+e avan azua tja si’aizua a masanetalj a papacun tjanumun
+e                 avan         azua                 tja=si-’a-izua                                 a 
+填補詞        就        主格.那        我們.包含.屬格=參焦-KA-存在        連繫詞masanetalj         a                 pa-pacun         tjanumun
+主焦.全部        連繫詞        使役-看        你們.斜格
+所以我們大家聚集在此

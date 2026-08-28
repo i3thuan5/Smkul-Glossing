@@ -1,0 +1,22 @@
+﻿1.
+0:00:00.000,0:00:02.000
+Kiya ha, Tku ita mnswayi
+Kiya         ha              Tku                ita                   mnswayi
+好的     填補詞       人名      主格.咱們     兄弟姊妹
+好的, Tku 姊妹 
+
+
+2.
+0:00:02.000,0:00:04.842
+Iq qbsuran miyah nami pxal hini duri.
+Iq        qbsuran     m-iyah=nami         pxal         hini         duri
+是        兄姊           主焦-來=主格.我們    再         這裡     又
+我們今天再次登門採訪您
+
+
+3.
+0:00:04.842,0:00:06.672
+Miyah nami smiling
+m-iyah=nami                    s<m>iling
+主焦-來=我們.主格        <主焦>問
+我們今天來採訪

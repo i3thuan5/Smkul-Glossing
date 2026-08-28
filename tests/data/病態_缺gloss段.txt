@@ -1,0 +1,7 @@
+98
+00:09:12,485 --> 00:09:15,789
+’imasuqudras anga ti Tju’u wa, maparamur cu tu liyav,
+’i-masu-qudras=anga                 ti         Tju’u         wa
+’I-去除-白髮=完成貌                主格        人名        言談標記
+ maparamur cu tu liyav
+萩伍的白髮也會沒了，這個太多了吧，
