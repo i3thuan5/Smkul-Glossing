@@ -97,6 +97,15 @@ class TestDump(unittest.TestCase):
         back = yaml.safe_load(text)
         self.assertEqual(back["檔案"][0]["句"][0]["編號"], "26")
 
+    def test_一個詞一行(self):
+        text = yamlout.dump(yamlout.build([build_corpus()]))
+        self.assertIn(
+            "\n    - {原詞: pisanoAmis, 切分: pi-sano-Amis, 詞素: "
+            "[{形: pi, 義: PI, 構詞: 前綴}, {形: sano, 義: 像, 構詞: 前綴}, "
+            "{形: Amis, 義: 族名, 構詞: 詞根}]}\n",
+            text,
+        )
+
     def test_寫成單一檔案(self):
         with tempfile.TemporaryDirectory() as out_dir:
             path, files, sentences = yamlout.write(
