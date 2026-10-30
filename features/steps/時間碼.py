@@ -29,16 +29,16 @@ def step_結束(context, expect):
         "預期 " + expect + "，實際 " + context.timecode[2])
 
 
-@then("這一組記成結束時間早於開始")
+@then("這一段記成結束時間早於開始")
 def step_時間顛倒(context):
-    """時間顛倒是組層級的問題，所以要讓程式真的去解析一組。
+    """時間顛倒是段層級的問題，所以要讓程式真的去解析一段。
 
     這一條只看時間碼，本文是什麼不影響判斷，
     所以只餵編號行加時間碼行。
     """
     text = "1\n" + context.timecode_line + "\n"
     corpus = parse_text(text, path="feature")
-    assert corpus.entries, "切不出組:" + context.timecode_line
+    assert corpus.entries, "切不出段:" + context.timecode_line
     kinds = []
     for issue in corpus.entries[0].issues:
         kinds.append(issue.kind)

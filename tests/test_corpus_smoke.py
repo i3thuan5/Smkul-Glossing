@@ -46,17 +46,17 @@ class TestCorpusSmoke(unittest.TestCase):
                 for issue in entry.issues:
                     cls.kinds[issue.kind.value] += 1
 
-    def test_三十一个檔案攏解析會過(self):
-        # 語料ê來源是 docx:31 个,比 txt 加一个太魯閣 2。
+    def test_三十一個檔案都解析得過(self):
+        # 語料的來源是 docx:31 個,比 txt 多一個太魯閣 2。
         self.assertEqual(len(self.files), 31)
         for corpus in self.files:
             self.assertTrue(corpus.entries, corpus.path)
 
-    def test_組數(self):
+    def test_段數(self):
         self.assertGreater(self.total, 7000)
         self.assertGreater(self.clean, self.total // 2)
 
-    def test_每一組都有時間碼(self):
+    def test_每一段都有時間碼(self):
         for corpus in self.files:
             for entry in corpus.entries:
                 self.assertTrue(entry.start, corpus.path)
@@ -66,9 +66,9 @@ class TestCorpusSmoke(unittest.TestCase):
         self.assertEqual(self.kinds["重複標註"], 13)
         self.assertEqual(self.kinds["時間碼單位不明"], 2)
         self.assertEqual(self.kinds["時間碼格式混用"], 1)
-        for label in ("行黏在一起", "缺 gloss 段", "缺翻譯行", "空組",
+        for label in ("行黏在一起", "缺詞素翻譯行", "缺華語翻譯行", "空段",
                       "孤兒時間碼", "孤立雜訊行", "純華語句",
-                      "原文與切分不符"):
+                      "族語原句與詞素切割不符"):
             self.assertGreater(self.kinds[label], 0, label)
 
     def test_重複標註都在南排灣四(self):
@@ -90,7 +90,7 @@ class TestCorpusSmoke(unittest.TestCase):
         self.assertEqual(found, 12)
 
     def test_自動處理都有記下來(self):
-        # docx 抽出來ê內文無 BOM,所以彼項是 0 筆,規則猶原留咧。
+        # docx 抽出來的內文沒有 BOM,所以那一項是 0 筆,規則仍然保留。
         self.assertEqual(self.log.records[NormKind.BOM].count, 0)
         self.assertGreater(
             self.log.records[NormKind.LONG_ENTRY_REJOIN].count, 800)

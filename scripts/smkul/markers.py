@@ -30,7 +30,7 @@ MAX_REPEAT = 50
 # 不過只有每個大類的第一列才有「大類」那一格,其他列會少一欄,
 # 所以要用「編號」欄(1-1、4-12 這種)當錨點來定位。
 NUMBER = re.compile(r'^\d+-\d+$')
-# 切分符號。詞素翻譯要照這些符號拆開,才拿得到單一標記。
+# 切割符號。詞素翻譯要照這些符號拆開,才拿得到單一標記。
 SPLITTERS = "-=<>~"
 
 OFFSET_CATEGORY = 1
@@ -100,7 +100,7 @@ def read_sheets(path=ODS_PATH):
 
 
 def split_gloss(text):
-    """把詞素翻譯照切分符號拆開,回傳每一段。"""
+    """把詞素翻譯照切割符號拆開,回傳每個詞素。"""
     out = []
     current = []
     for char in text:
@@ -120,10 +120,10 @@ def split_gloss(text):
 
 
 def affix_position(affix):
-    """看「詞綴或詞」欄的寫法,判斷這個標記在 gloss 的哪個位置。
+    """看「詞綴或詞」欄的寫法,判斷這個標記在詞素翻譯的哪個位置。
 
-    `mi-` 前綴 → gloss 的第一段;`-un` 後綴、`=in` 附著 → 最後一段;
-    `<om>` 中綴 → 中綴那一段;都不是(獨立詞)→ 不取。
+    `mi-` 前綴 → 詞素翻譯的第一個詞素;`-un` 後綴、`=in` 附著 → 最後一個;
+    `<om>` 中綴 → 中綴那一個;都不是(獨立詞)→ 不取。
     """
     affix = affix.strip()
     if not affix:
@@ -138,7 +138,7 @@ def affix_position(affix):
 
 
 def marker_from_gloss(gloss, position):
-    """照位置從詞素翻譯取出標記那一段。"""
+    """照位置從詞素翻譯取出標記那個詞素。"""
     if position == "中綴":
         found = re.findall(r'<([^>]*)>', gloss)
         if found:
@@ -166,7 +166,7 @@ def markers_of(rows):
     兩個來源:
     1. 類別欄——本身就是標記名(主焦、受焦、完成貌……)。
     2. 詞綴或詞欄 + 詞素翻譯欄——照詞綴的位置(前綴/後綴/中綴)
-       從詞素翻譯取出對應的那一段。這樣才不會把詞根的實詞意譯
+       從詞素翻譯取出對應的那個詞素。這樣才不會把詞根的實詞意譯
        (書、學習、說話……)誤收成語法標記。
     """
     found = set()
@@ -187,7 +187,7 @@ def markers_of(rows):
                 marker = marker_from_gloss(values[gloss], position)
                 if marker and len(marker) <= 12:
                     found.add(marker)
-        # 中綴的 gloss 有時寫在詞素翻譯裡(例如 參焦<經驗貌>說),
+        # 中綴的意思有時寫在詞素翻譯欄裡(例如 參焦<經驗貌>說),
         # 詞綴欄卻只寫 s-,所以再撈一次 <...>。
         if len(values) > gloss:
             for infix in re.findall(r'<([^>]*)>', values[gloss]):
@@ -200,7 +200,7 @@ def markers_of(rows):
 
 def _with_parts(markers):
     """標記可以用 . 串幾個屬性(主焦.祈使)。子標記也要算數,
-    語料常常只用其中一段。"""
+    語料常常只用其中一個屬性。"""
     out = set()
     for marker in markers:
         out.add(marker)
@@ -212,16 +212,16 @@ def _with_parts(markers):
     return out
 
 
-# 環綴tī「詞綴或詞」欄ê寫法:pi-...-i、ki-...-an。
+# 環綴在「詞綴或詞」欄的寫法:pi-...-i、ki-...-an。
 CIRCUMFIX = re.compile(r'^([^\s.]+)-\.\.\.-([^\s.]+)$')
 
 
 def circumfixes_of(rows):
-    """一个 sheet 有登記ê環綴,用頭尾兩段ê gloss 做鑰匙。
+    """一個 sheet 有登記的環綴,用頭尾兩個詞素的詞素翻譯當鑰匙。
 
     ODS 4-29「祈使 | pi-...-i | pi-tengil-i | PI-聽-祈使」,
-    掠出來就是 ("PI", "祈使")。判定ê時陣,一个詞ê頭尾兩段 gloss
-    對著這組,兩爿就攏標做環綴(判斷方法 1c)。
+    取出來就是 ("PI", "祈使")。判定的時候,一個詞頭尾兩個詞素的詞素翻譯
+    對上這組,兩邊就都標成環綴(判斷方法 1c)。
     """
     found = set()
     for values in rows:
@@ -241,15 +241,15 @@ def circumfixes_of(rows):
     return found
 
 
-# 詞綴或詞欄有幾若个形ê時,用 ; 抑是 , 分開(像 -u;-i);
-# 一條環綴嘛會有幾若段(lri-ki-)。
+# 詞綴或詞欄有好幾個形的時候,用 ; 或 , 分開(像 -u;-i);
+# 一條環綴也會有好幾個詞素(lri-ki-)。
 FORM_SPLIT = re.compile(r'[;,\-=<>~\s]+')
 
 
 def _concrete_forms(text):
-    """共詞綴欄拆做一个一个ê形。
+    """把詞綴欄拆成一個一個的形。
 
-    漢字寫ê(「重疊-」)是位置ê講法,毋是實際ê形,袂收。
+    漢字寫的(「重疊-」)是位置的說法,不是實際的形,不收。
     """
     out = set()
     for piece in FORM_SPLIT.split(text.strip()):
@@ -268,12 +268,12 @@ def _concrete_forms(text):
 
 
 def _is_affix_row(affix_text, example):
-    """這一列登記ê是詞綴抑是詞。
+    """這一列登記的是詞綴還是詞。
 
-    詞綴欄本身有 -、=、<> ê就是詞綴;無ê時陣閣看族語範例——
-    9-28「還｜ho」範例寫 `k<om>aen-ay=ho`,`=ho` 表示伊是依附詞。
-    9-79「以後｜anoayaw」範例干焦 `anoayaw`,無黏tī別个詞頂懸,
-    彼是詞,毋是詞綴。
+    詞綴欄本身有 -、=、<> 的就是詞綴;沒有的時候再看族語範例——
+    9-28「還｜ho」範例寫 `k<om>aen-ay=ho`,`=ho` 表示它是依附詞。
+    9-79「以後｜anoayaw」範例只有 `anoayaw`,沒有黏在別的詞上面,
+    那是詞,不是詞綴。
     """
     if affix_position(affix_text):
         return True
@@ -287,16 +287,16 @@ def _is_affix_row(affix_text, example):
 
 
 def affix_forms_of(rows):
-    """一个 sheet ê {標記: 這个標記登記ê詞綴形}。
+    """一個 sheet 的 {標記: 這個標記登記的詞綴形}。
 
-    清單登記ê是某一个詞綴ê形佮意思(4-32「去｜ma-」講ê是「前綴
-    ma- ê意思是去」),毋是「凡是 gloss 寫『去』ê攏算詞綴」。
-    所以查表ê時陣形嘛愛對會著——看 features/構詞判定.feature
+    清單登記的是某一個詞綴的形和意思(4-32「去｜ma-」說的是「前綴
+    ma- 的意思是去」),不是「凡是詞素翻譯寫『去』的都算詞綴」。
+    所以查表的時候形也要對得上——看 features/構詞判定.feature
     判斷方法 1f。
 
-    無tī這搭ê標記表示清單無共伊登記做詞綴(登記做詞,像 9-79
-    「以後｜anoayaw」),彼款毋算詞綴。有tī這搭毋過集合是空ê,
-    表示是詞綴毋過無實際ê形通對(像「重疊-」),按呢就干焦看 gloss。
+    不在這裡的標記表示清單沒有把它登記成詞綴(登記成詞,像 9-79
+    「以後｜anoayaw」),那種不算詞綴。在這裡但集合是空的,
+    表示是詞綴但沒有實際的形可以對(像「重疊-」),這樣就只看詞素翻譯。
     """
     out = {}
     for values in rows:
@@ -328,7 +328,7 @@ def affix_forms_of(rows):
     return out
 
 
-# 全大寫拉丁字母的 gloss 是 ODS 1-2 的「不確定」標記，合法但要統計。
+# 全大寫拉丁字母的詞素翻譯是 ODS 1-2 的「不確定」標記，合法。
 UNCERTAIN = re.compile(r"^'?[A-Z]+$")
 
 # 重疊的形是詞根自己的翻頭，沒辦法在清單登記成固定的形，所以
@@ -347,7 +347,7 @@ def is_uncertain(gloss):
     """ODS 1-2 的「不確定」標記：全大寫拉丁字母，或是 ?。
 
     排灣語有 'I、'A 這種帶喉塞音的寫法，也算。用 . 串接時
-    （AN.主格）看第一段。
+    （AN.主格）看第一個屬性。
     """
     gloss = gloss.strip()
     if gloss == "?":
@@ -358,7 +358,7 @@ def is_uncertain(gloss):
 
 
 def _is_focus(gloss):
-    """焦點標記（主焦、受焦、處焦、工具焦……）的 gloss 都是「焦」結尾。"""
+    """焦點標記（主焦、受焦、處焦、工具焦……）的詞素翻譯都是「焦」結尾。"""
     return gloss.endswith("焦")
 
 
@@ -367,7 +367,7 @@ class MarkerList:
 
     ODS 一個 sheet 就是一個語言。清單有三種用法，全部收在這裡：
     allowed 是合法的標記名，circumfixes 是登記過的環綴頭尾組合，
-    affix_forms 是每個標記登記過的詞綴形。判定要查的是「這一段是
+    affix_forms 是每個標記登記過的詞綴形。判定要查的是「這個詞素是
     不是詞綴」，所以對外只給 is_marker 與 circumfix_pair 兩支。
     查表的規則寫在 features/構詞判定.feature 的判斷方法 1b、1c、1d、1f。
     """
@@ -392,12 +392,12 @@ class MarkerList:
         return cls()
 
     def form_fits(self, form, gloss):
-        """這一段的形對不對得上清單登記的詞綴形（判斷方法 1f）。
+        """這個詞素的形對不對得上清單登記的詞綴形（判斷方法 1f）。
 
-        清單登記的是某一個詞綴的形與意思，所以 gloss 對上了還不夠，
-        形也要對得上。清單若沒有把這個 gloss 登記成詞綴（登記成詞，
-        像 9-79「以後｜anoayaw」），就沒有形可以對，那一段不算詞綴；
-        有登記成詞綴但沒有實際的形（像「重疊-」），就只看 gloss。
+        清單登記的是某一個詞綴的形與意思，所以詞素翻譯對上了還不夠，
+        形也要對得上。清單若沒有把這個詞素翻譯登記成詞綴（登記成詞，
+        像 9-79「以後｜anoayaw」），就沒有形可以對，那個詞素不算詞綴；
+        有登記成詞綴但沒有實際的形（像「重疊-」），就只看詞素翻譯。
         """
         if head_of(gloss) == REDUPLICATION_GLOSS:
             return True
@@ -409,10 +409,10 @@ class MarkerList:
         return form.strip() in registered
 
     def is_marker(self, form, gloss):
-        """這一段是不是語法標記（判斷方法 1b、1d、1f）。
+        """這個詞素是不是語法標記（判斷方法 1b、1d、1f）。
 
         完全對上清單、形也對得上的才算標記；全大寫的不確定標記
-        沒有形可以對，照算（1b）。用 . 串幾個屬性的時候看第一段，
+        沒有形可以對，照算（1b）。用 . 串幾個屬性的時候看第一個屬性，
         但是「焦點後面還有內容」（像「主焦.去」）照 1d 是詞根的候選。
         """
         gloss = gloss.strip()

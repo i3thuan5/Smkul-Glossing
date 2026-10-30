@@ -29,7 +29,7 @@ class TestSheetMapping(unittest.TestCase):
 
 class TestSplit(unittest.TestCase):
 
-    def test_照切分符號拆(self):
+    def test_照切割符號拆(self):
         self.assertEqual(split_gloss("主焦-學習"), ["主焦", "學習"])
         self.assertEqual(
             split_gloss("主焦-知道=完成貌"), ["主焦", "知道", "完成貌"])
@@ -81,7 +81,7 @@ class TestMarkers(unittest.TestCase):
             self.assertNotIn(label, amis, label)
 
     def test_中綴寫在詞素翻譯裡也收得到(self):
-        """布農語 3-7 的詞綴欄只寫 s-,經驗貌藏在 gloss 的 <> 裡。"""
+        """布農語 3-7 的詞綴欄只寫 s-,經驗貌藏在詞素翻譯的 <> 裡。"""
         self.assertIn("經驗貌", self.markers["布農語"].allowed)
 
     def test_用點串接的子標記也算數(self):

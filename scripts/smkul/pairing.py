@@ -1,4 +1,4 @@
-"""docx 與 txt 的配對、逐組比對。"""
+"""docx 與 txt 的配對、逐段比對。"""
 
 import difflib
 import os
@@ -14,11 +14,11 @@ from scripts.smkul.parser import (
     parse_text,
 )
 
-# docx 匯出做 txt ê時,審閱註解會tī內文留兩个 [a] 這款錨點,
-# 註解本文嘛會予寫做一般ê文字行(像「[a]待討論」)。
-# 語料本身已經改用 docx 做來源,遮ê攏無關係矣;毋過 docx↔txt
-# 這份歷史核對若無先共這款殘留掰掉,差異會予淹掉(253 筆 vs 17 筆),
-# 看袂出真正ê內容無仝。
+# docx 匯出成 txt 的時候,審閱註解會在內文留下 [a] 這種錨點,
+# 註解本文也會被寫成一般的文字行(像「[a]待討論」)。
+# 語料本身已經改用 docx 當來源,這些都沒關係了;但 docx↔txt
+# 這份歷史核對如果沒有先把這種殘留去掉,差異會被淹沒(253 筆 vs 17 筆),
+# 看不出真正的內容差異。
 ANCHOR = re.compile(r'\[([a-z]{1,2})\]')
 
 
@@ -29,7 +29,7 @@ def read_txt(path):
 
 
 def strip_comment_residue(text, comments):
-    """共 txt ê註解殘留掰掉。comments 是 docx ê {字母: 內容}。"""
+    """把 txt 的註解殘留去掉。comments 是 docx 的 {字母: 內容}。"""
     if not comments:
         return text
     out = []
@@ -50,11 +50,11 @@ def strip_comment_residue(text, comments):
         out.append("".join(kept))
     return "\n".join(out)
 
-# 目錄名 → (族別, 語別)。語別是路徑的第二層,沒有時用族別。
+# 目錄名 → (族別, 語言別)。語言別是路徑的第二層,沒有時用族別。
 
 
 def split_kind(rel_path):
-    """從相對路徑取出族別與語別。"""
+    """從相對路徑取出族別與語言別。"""
     parts = rel_path.split(os.sep)
     if len(parts) < 2:
         parts = rel_path.split("/")
@@ -195,7 +195,7 @@ TIMES = (("開始時間", "start"), ("結束時間", "end"))
 
 
 def compare_entries(rel_path, txt_corpus, docx_corpus):
-    """逐組比對。空白差異已經由 parser 合併掉了。"""
+    """逐段比對。空白差異已經由 parser 合併掉了。"""
     issues = []
     txt_map = _entry_map(txt_corpus.entries)
     docx_map = _entry_map(docx_corpus.entries)
@@ -203,8 +203,8 @@ def compare_entries(rel_path, txt_corpus, docx_corpus):
         issues.append(
             Issue(
                 IssueKind.ENTRY_COUNT_MISMATCH, rel_path, "",
-                "txt " + str(len(txt_corpus.entries)) + " 組，docx " +
-                str(len(docx_corpus.entries)) + " 組",
+                "txt " + str(len(txt_corpus.entries)) + " 段，docx " +
+                str(len(docx_corpus.entries)) + " 段",
             )
         )
     numbers = set(txt_map) | set(docx_map)
@@ -214,13 +214,13 @@ def compare_entries(rel_path, txt_corpus, docx_corpus):
         if in_txt is None:
             issues.append(
                 Issue(IssueKind.CONTENT_DIFF, rel_path, number,
-                      "txt 裡找不到這一組")
+                      "txt 裡找不到這一段")
             )
             continue
         if in_docx is None:
             issues.append(
                 Issue(IssueKind.CONTENT_DIFF, rel_path, number,
-                      "docx 裡找不到這一組")
+                      "docx 裡找不到這一段")
             )
             continue
         for label, field in TIMES:

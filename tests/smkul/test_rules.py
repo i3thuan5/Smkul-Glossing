@@ -1,9 +1,9 @@
 """測試 rules.py 裡 feature 沒有涵蓋的部份。
 
-切分與 gloss 的對應、構詞判定的規則本身都寫在
-features/切分與glossing對應.feature 與 features/構詞判定.feature，
-由 behave 測。這裡只留 feature 測不到的:Word.raw、不確定標記的
-統計，以及 validate() 的整合。
+詞素切割與詞素翻譯的對應、構詞判定的規則本身都寫在
+features/詞素切割與詞素翻譯對應.feature 與 features/構詞判定.feature，
+由 behave 測。這裡只留 feature 測不到的:Word.raw、不確定標記的樣式，
+以及 validate() 的整合。
 """
 
 import unittest
@@ -12,12 +12,7 @@ from tests import ODS
 
 from scripts.smkul.entry import Entry
 from scripts.smkul.markers import is_uncertain, load_marker_lists
-from scripts.smkul.rules import (
-    build_words,
-    collect_uncertain,
-    split_morphemes,
-    validate,
-)
+from scripts.smkul.rules import build_words, split_morphemes, validate
 
 
 def make(segmentation, gloss, source=""):
@@ -42,7 +37,7 @@ class TestBuildWords(unittest.TestCase):
     def setUp(self):
         self.markers = load_marker_lists(ODS)["阿美語"]
 
-    def test_原詞是切分提掉符號(self):
+    def test_原詞是詞素切割拿掉符號(self):
         entry = make("awa=to", "沒有=完成貌", source="awa to")
         word = build_words(entry, self.markers)[0]
         self.assertEqual(word.raw, "awato")
@@ -50,15 +45,6 @@ class TestBuildWords(unittest.TestCase):
 
 
 class TestMarkerLookup(unittest.TestCase):
-
-    def setUp(self):
-        self.markers = load_marker_lists(ODS)["阿美語"]
-
-    def test_大寫的不確定標記放行且統計(self):
-        entry = make("pi-codad-an", "PI-書-處焦")
-        entry.words = build_words(entry, self.markers)
-        uncertain = collect_uncertain(entry, "阿美語")
-        self.assertIn(("PI", "阿美語"), uncertain)
 
     def test_不確定標記的樣式(self):
         self.assertTrue(is_uncertain("PI"))
@@ -70,18 +56,35 @@ class TestMarkerLookup(unittest.TestCase):
 
 class TestValidate(unittest.TestCase):
 
-    def test_整組驗證(self):
-        markers = load_marker_lists(ODS)["阿美語"]
+    def test_整段驗證只回傳問題清單(self):
         entry = make(
             "pi-sano-Amis a caciyaw awa=to matini",
             "PI-像-族名 連繫詞 說話 沒有=完成貌 現在",
             source="pisanoAmis a caciyaw awa to matini",
         )
-        issues, uncertain, hard = validate(entry, markers, "阿美語")
-        self.assertEqual(issues, [])
-        self.assertEqual(len(entry.words), 5)
-        self.assertEqual(entry.words[0].morphemes[2].gloss, "族名")
+        self.assertEqual(validate(entry), [])
 
+    def test_不再做構詞判定(self):
+        """glossing-validation REMOVED「構詞判定的分類」:驗證不判構詞。"""
+        entry = make("pi-sano-Amis", "PI-像-族名")
+        validate(entry)
+        self.assertEqual(entry.words, [])
 
-class TestCorrespondence(unittest.TestCase):
-    """切分行佮 gloss 行對會起來袂,分類ê名佮 feature 仝款。"""
+    def test_對不起來的段列為錯誤(self):
+        entry = make("ma-linah-ay", "主焦-搬遷")
+        issues = validate(entry)
+        self.assertEqual(len(issues), 1)
+        self.assertTrue(issues[0].is_error())
+
+    def test_逐個詞對不起來的說明與對照(self):
+        issue = validate(make("ma-linah-ay", "主焦-搬遷"))[0]
+        self.assertEqual(issue.detail, "這個詞的切割符號對不起來")
+        self.assertEqual(
+            issue.compare,
+            [("詞素切割", "ma-linah-ay"), ("詞素翻譯", "主焦-搬遷")])
+
+    def test_詞數不同的說明與對照(self):
+        issue = validate(make("ma-fana' ci mira", "主焦-會 主格 主格 他.所有格"))[0]
+        self.assertEqual(issue.detail, "詞素切割 3 個詞，詞素翻譯 4 個詞")
+        self.assertEqual(
+            [issue.compare[0][0], issue.compare[1][0]], ["詞素切割", "詞素翻譯"])

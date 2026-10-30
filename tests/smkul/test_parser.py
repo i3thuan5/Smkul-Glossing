@@ -1,8 +1,8 @@
 """測試 parser.py 裡 feature 沒有涵蓋的部份。
 
-字元正規化、排版分析、時間碼、原文切分比對的規則都寫在對應的
+字元正規化、排版分析、時間碼、族語原句詞素切割比對的規則都寫在對應的
 features/*.feature，由 behave 測。這裡只留 feature 測不到的:
-自動處理的計數、feature 沒有例子的錯誤分類、病態組。
+自動處理的計數、feature 沒有例子的錯誤分類、病態段。
 Fixture 都是從真語料抽出來的。
 """
 
@@ -97,7 +97,7 @@ class TestSplitEntries(unittest.TestCase):
 
 
 class TestAssemble(unittest.TestCase):
-    """組四行:標準組、長句分段重組、重複標註。"""
+    """組四行:標準段、長句換行重組、重複標註。"""
 
     def assemble_all(self, name, log=None):
         corpus = parse(name, log)
@@ -106,16 +106,16 @@ class TestAssemble(unittest.TestCase):
             out.append((entry, assemble_entry(entry, log)))
         return out
 
-    def test_endash_gloss_重組後換半形(self):
+    def test_endash_詞素翻譯_重組後換半形(self):
         log = NormLog()
-        entry, ok = self.assemble_all("正規化_endash_gloss.txt", log)[0]
+        entry, ok = self.assemble_all("正規化_endash_詞素翻譯.txt", log)[0]
         self.assertTrue(ok)
         self.assertNotIn("–", entry.gloss)
         self.assertIn("PI-書-處焦", entry.gloss)
         self.assertEqual(log.records[NormKind.EN_DASH].count, 1)
 
     def test_重複標註_不可以組起來(self):
-        """南排灣 4 第 156、157 組是同一句留兩版,不是換行。"""
+        """南排灣 4 第 156、157 段是同一句留兩版,不是換行。"""
         results = self.assemble_all("病態_重複標註.txt")
         self.assertEqual(len(results), 2)
         for entry, ok in results:
@@ -126,20 +126,20 @@ class TestAssemble(unittest.TestCase):
             self.assertIn(IssueKind.DUPLICATE_ANNOTATION, kinds)
             self.assertFalse(entry.is_clean())
 
-    def test_病態組都組不起來(self):
+    def test_病態段都組不起來(self):
         names = [
             "病態_黏行.txt",
-            "病態_缺gloss段.txt",
-            "病態_缺翻譯行.txt",
+            "病態_缺詞素翻譯行.txt",
+            "病態_缺華語翻譯行.txt",
             "病態_雜訊行.txt",
         ]
         for name in names:
             for entry, ok in self.assemble_all(name):
-                self.assertFalse(ok, name + " 第" + entry.number + "組")
+                self.assertFalse(ok, name + " 第" + entry.number + "段")
 
 
 class TestSourceSegmentation(unittest.TestCase):
-    """嚴格用原文檢查切分:差一個字母或單引號就算錯誤。"""
+    """嚴格用族語原句檢查詞素切割:差一個字母或單引號就算錯誤。"""
 
     def check(self, name, index=0):
         corpus = parse(name)
@@ -160,7 +160,7 @@ class TestSourceSegmentation(unittest.TestCase):
 
 
 class TestClassify(unittest.TestCase):
-    """組不起來的組,要分得出是哪一種異常。"""
+    """組不起來的段,要分得出是哪一種異常。"""
 
     def kinds_of(self, name):
         corpus = parse(name)
@@ -173,12 +173,12 @@ class TestClassify(unittest.TestCase):
             out.append((entry.number, labels))
         return out
 
-    def test_空組(self):
-        got = self.kinds_of("病態_空組.txt")
+    def test_空段(self):
+        got = self.kinds_of("病態_空段.txt")
         self.assertIn(IssueKind.EMPTY_ENTRY, got[0][1])
-        # 第 2 組是正常ê組,毋過原文 `O na` 切分寫做 `Ona`,
-        # 詞數對袂起來——照原文切分比對.feature「只差空白，先算
-        # 不通過」彼條,這算「原文與切分不符」。
+        # 第 2 段是正常的段,但族語原句 `O na` 詞素切割寫成 `Ona`,
+        # 詞數對不起來——照族語原句詞素切割比對.feature「只差空白，
+        # 先算不通過」那條,這算「族語原句與詞素切割不符」。
         self.assertEqual(
             got[1][1], [IssueKind.SOURCE_SEGMENT_MISMATCH])
 
@@ -199,27 +199,27 @@ class TestClassify(unittest.TestCase):
         for number, labels in got:
             self.assertIn(IssueKind.CHINESE_ONLY, labels, number)
 
-    def test_缺翻譯行(self):
-        got = self.kinds_of("病態_缺翻譯行.txt")
+    def test_缺華語翻譯行(self):
+        got = self.kinds_of("病態_缺華語翻譯行.txt")
         for number, labels in got:
             self.assertIn(IssueKind.MISSING_TRANSLATION, labels, number)
 
-    def test_黏行(self):
+    def test_行黏在一起(self):
         got = self.kinds_of("病態_黏行.txt")
         for number, labels in got:
             self.assertIn(IssueKind.GLUED_LINE, labels, number)
 
-    def test_缺gloss段(self):
-        got = self.kinds_of("病態_缺gloss段.txt")
-        self.assertIn(IssueKind.MISSING_GLOSS_SEGMENT, got[0][1])
+    def test_缺詞素翻譯行(self):
+        got = self.kinds_of("病態_缺詞素翻譯行.txt")
+        self.assertIn(IssueKind.MISSING_GLOSS_LINE, got[0][1])
 
     def test_重複標註不會再分成別種(self):
         got = self.kinds_of("病態_重複標註.txt")
         for number, labels in got:
             self.assertEqual(labels, [IssueKind.DUPLICATE_ANNOTATION])
 
-    def test_正常的組沒問題(self):
-        for name in ("典型_srt式.txt", "長句分段.txt"):
+    def test_正常的段沒問題(self):
+        for name in ("典型_srt式.txt", "長句換行.txt"):
             corpus = parse(name)
             for entry in corpus.entries:
                 build_entry(entry)
@@ -252,13 +252,13 @@ class TestPunctuation(unittest.TestCase):
 
 
 class TestReversedTimecode(unittest.TestCase):
-    """結束時間比開始還早,是打錯ê。"""
+    """結束時間比開始還早,是打錯的。"""
 
-    def test_時間碼拆做數字(self):
+    def test_時間碼拆成數字(self):
         self.assertEqual(timecode_parts("0:00:27.880"), (0, 0, 27, 880))
         self.assertEqual(timecode_parts("00:04:21"), (0, 4, 21))
 
-    def test_正常ê時間碼無代誌(self):
+    def test_正常的時間碼沒問題(self):
         text = "1\n00:00:00-00:04:21\nkunaku\nkunaku\n我\n我\n"
         corpus = parse_text(text, path="t.txt")
         for issue in corpus.entries[0].issues:

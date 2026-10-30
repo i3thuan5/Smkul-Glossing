@@ -1,7 +1,6 @@
 """測試 report.py 的組件。"""
 
 import unittest
-from collections import Counter
 
 from scripts.smkul.entry import (
     CorpusFile,
@@ -64,7 +63,7 @@ class TestSections(unittest.TestCase):
     def test_明細有定位到編號(self):
         got = report.detail_section("明細", self.build_issues())
         self.assertIn("### a.txt(2 筆)", got)
-        self.assertIn("第26組", got)
+        self.assertIn("第26段", got)
         self.assertIn("**行黏在一起**", got)
 
     def test_沒問題時也有這一章(self):
@@ -81,11 +80,20 @@ class TestSections(unittest.TestCase):
         self.assertIn("這次影響:0 筆", got)
 
     def test_自動處理逐項指去_feature(self):
-        """例只寫tī feature,報告干焦指路,兩爿才袂各寫一份。"""
+        """例子只寫在 feature,報告只指路,兩邊才不會各寫一份。"""
         got = report.norm_section(NormLog())
         self.assertIn("features/字元正規化.feature", got)
         self.assertIn("features/排版分析.feature", got)
         self.assertIn("features/時間碼.feature", got)
+
+    def test_例子定位到段(self):
+        issue = Issue(IssueKind.GLUED_LINE, "阿美族/a.txt", "26", "黏著")
+        self.assertEqual(report.render_issue(issue), ["- a.txt 第26段|黏著"])
+
+    def test_依語言別統計(self):
+        got = report.variant_section(
+            [("阿美", "秀姑巒", 1)], ["族別", "語言別", "檔數"])
+        self.assertIn("## 依語言別統計", got)
 
     def test_yaml_來源有寫理由(self):
         self.assertIn("docx", report.YAML_SOURCE_WHY)
@@ -112,7 +120,7 @@ class TestCompareLines(unittest.TestCase):
             [("txt", "181. [e]"), ("docx", "")],
         )
         got = report.detail_section("明細", [issue])
-        self.assertIn("- 第180組|**內容差異**:第 5 行不同", got)
+        self.assertIn("- 第180段|**內容差異**:第 5 行不同", got)
         self.assertIn("  - txt:`181. [e]`", got)
         self.assertIn("  - docx:``", got)
 
@@ -121,50 +129,6 @@ class TestCompareLines(unittest.TestCase):
         got = report.detail_section("明細", [issue])
         self.assertIn("- 整個檔案|**缺檔**:只有 docx,沒有 txt", got)
         self.assertNotIn("  - ", got)
-
-
-class TestAggregation(unittest.TestCase):
-    """glossing 報告專屬的兩個統計區。"""
-
-    def test_不確定標記統計(self):
-        counter = Counter()
-        counter[("PI", "阿美語")] = 95
-        counter[("AN", "排灣語")] = 213
-        got = report.uncertain_section(counter)
-        self.assertIn("| `AN` | 排灣語 | 213 |", got)
-        self.assertIn("不算錯誤", got)
-
-    def test_不確定標記無資料(self):
-        self.assertIn("(無)", report.uncertain_section(Counter()))
-
-    def test_構詞判斷困難依次數排序(self):
-        case = "每一段都被標成詞綴"
-        records = [
-            ("還", "布農語", case, "na-還", "a.docx", "8"),
-            ("還", "布農語", case, "na-還", "a.docx", "9"),
-            ("還", "布農語", case, "na-還", "b.docx", "3"),
-            ("還", "布農語", case, "na-還", "b.docx", "5"),
-            ("媽媽", "排灣語", case, "tja=媽媽", "c.docx", "1"),
-        ]
-        got = report.hard_morphology_section(records)
-        first = got.index("`還`")
-        second = got.index("`媽媽`")
-        self.assertLess(first, second)
-        self.assertIn("| `還` | 布農語 | 4 | 2 |", got)
-        self.assertIn("features/構詞判定.feature", got)
-        self.assertIn("建議補充到《常用構詞標記清單》", got)
-
-    def test_構詞判斷困難最多列三個實例(self):
-        records = []
-        for number in range(10):
-            records.append(
-                ("還", "布農語", "每一段都被標成詞綴", "na-還",
-                 "a.docx", str(number)))
-        got = report.hard_morphology_section(records)
-        self.assertEqual(got.count("a.docx 第"), 3)
-
-    def test_構詞判斷困難無資料(self):
-        self.assertIn("(無)", report.hard_morphology_section([]))
 
 
 class TestNumbering(unittest.TestCase):
@@ -250,6 +214,17 @@ class TestFormatSection(unittest.TestCase):
     def test_尚未交付的_sheet_會列出來(self):
         got = report.format_section(self.假語料([{}]), ["阿美語", "鄒語"])
         self.assertIn("鄒語", got)
+
+    def test_四行用會議決議的名稱(self):
+        """2026.09 會議案由四。"""
+        got = report.format_section(self.假語料([{}]), [])
+        for name in ("族語原句", "詞素切割", "詞素翻譯", "華語翻譯"):
+            self.assertIn(name, got)
+        self.assertIn("### 一段語料的結構", got)
+        self.assertIn("### 第二行的切割符號", got)
+        self.assertIn("features/詞素切割與詞素翻譯對應.feature", got)
+        for old in ("切分", "gloss", "族語原文", "一組語料"):
+            self.assertNotIn(old, got)
 
     def test_不重抄判定規則(self):
         got = report.format_section(self.假語料([{}]), [])

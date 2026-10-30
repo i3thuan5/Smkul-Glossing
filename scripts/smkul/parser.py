@@ -1,7 +1,7 @@
-"""語料的 parser：把 docx 切成一組一組的標註。
+"""語料的 parser：把 docx 切成一段一段的標註。
 
 規格寫在 features/字元正規化.feature、features/排版分析.feature、
-features/時間碼.feature、features/原文切分比對.feature。
+features/時間碼.feature、features/族語原句詞素切割比對.feature。
 """
 
 import dataclasses
@@ -44,8 +44,8 @@ BOM = "\ufeff"
 
 
 def timecode_parts(value):
-    """時間碼拆做數字,通好比較先後。同一逝的開始佮結束一定同款格式,
-    所以照欄位比就會準,免管單位是啥物。"""
+    """時間碼拆成數字,才能比較先後。同一行的開始和結束一定是同一種格式,
+    所以照欄位比就會準,不用管單位是什麼。"""
     out = []
     for chunk in re.split(r'[:.,]', value):
         if chunk.isdigit():
@@ -79,7 +79,7 @@ def normalize_line(line, log=None, path="", number=""):
     """單行的字元正規化：BOM、全形＝、引號、en-dash、多餘空白。
 
     這是 features/字元正規化.feature 的入口，也是四行內容用的同一支。
-    時間碼行不可以走這裡——en-dash 是時間碼的合法分隔符號。切組
+    時間碼行不可以走這裡——en-dash 是時間碼的合法分隔符號。切段
     （parse_timecode）先做，四行的內容才正規化，見 assemble_entry。
     """
     fixed = line
@@ -93,9 +93,9 @@ def normalize_line(line, log=None, path="", number=""):
 
 
 def normalize_text(text, log=None, path=""):
-    """檔案層的正規化:BOM、全形＝、引號。逐行做，才留會著真正的例。
+    """檔案層的正規化:BOM、全形＝、引號。逐行做，才留得下真正的例子。
 
-    這一層不換 en-dash、不摺疊空白——切組要先認出時間碼行，
+    這一層不換 en-dash、不摺疊空白——切段要先認出時間碼行，
     而排版分析要看得到原本的行。那兩項在 normalize_line。
     """
     if text.startswith(BOM):
@@ -110,7 +110,7 @@ def normalize_text(text, log=None, path=""):
 
 
 def normalize_en_dash(line, log=None, path="", number=""):
-    """切分行、gloss 行的 en-dash 換成半形。時間碼行不能用這個。"""
+    """詞素切割行、詞素翻譯行的 en-dash 換成半形。時間碼行不能用這個。"""
     if "–" not in line and "—" not in line:
         return line
     fixed = line.replace("–", "-").replace("—", "-")
@@ -134,7 +134,7 @@ def parse_timecode(line):
 
 
 def _entry_starts(lines):
-    """找出每一組的起頭。回傳 [(起始 index, 時間碼 index, 解析結果)]。"""
+    """找出每一段的起頭。回傳 [(起始 index, 時間碼 index, 解析結果)]。"""
     out = []
     for index, line in enumerate(lines):
         parsed = parse_timecode(line)
@@ -217,7 +217,7 @@ def split_entries(text, path="", log=None):
                     NormKind.MISSING_BLANK_LINE,
                     lines[stop - 1].strip() + " ⏎ " +
                     lines[stop].strip(),
-                    "視為兩組，不依賴空行", path, number,
+                    "視為兩段，不依賴空行", path, number,
                 )
         entries.append(entry)
 
@@ -266,9 +266,9 @@ def _count_kinds(line):
 
 
 def line_kind(line):
-    """一行是「拉丁」(原文、切分)抑是「漢字」(gloss、翻譯)。
+    """一行是「拉丁」(族語原句、詞素切割)還是「漢字」(詞素翻譯、華語翻譯)。
 
-    比較ê是小寫拉丁字母佮漢字ê數量,大寫無算——看 _count_kinds。
+    比較的是小寫拉丁字母和漢字的數量,大寫不算——看 _count_kinds。
     """
     latin, han = _count_kinds(line)
     if latin == 0 and han == 0:
@@ -284,10 +284,10 @@ def collapse_spaces(line):
 
 
 def bare_form(text):
-    """保留字母、漢字、數字、單引號;空白、標點、切分符號都去掉。
+    """保留字母、漢字、數字、單引號;空白、標點、切割符號都去掉。
 
-    單引號(喉塞音)是音位，不能去掉——排灣語 ODS 1-3 規定切分要跟著
-    原文的寫法。大小寫不計(切分常把專有名詞寫成大寫)。
+    單引號(喉塞音)是音位，不能去掉——排灣語 ODS 1-3 規定詞素切割要
+    跟著族語原句的寫法。大小寫不計(詞素切割常把專有名詞寫成大寫)。
     """
     out = []
     for char in text.lower():
@@ -300,7 +300,7 @@ def bare_form(text):
     return "".join(out)
 
 
-# 原文與切分不符的細分。差一個字母與差一整段,要處理的方式不一樣。
+# 族語原句與詞素切割不符的細分。差一個字母與差一整串,要處理的方式不一樣。
 MISMATCH_WORDS = "詞數不同"
 MISMATCH_APOSTROPHE = "只差單引號"
 MISMATCH_ONE = "只差一個字母"
@@ -310,28 +310,28 @@ MISMATCH_LENGTH = "長度差很多"
 
 MISMATCH_WHY = OrderedDict()
 MISMATCH_WHY[MISMATCH_WORDS] = (
-    "字母序列一樣，可是詞的個數不一樣——原文黏成一個詞、切分拆開"
+    "字母序列一樣，可是詞的個數不一樣——族語原句黏成一個詞、詞素切割拆開"
     "(或相反)。依照「詞數要一個對一個、只有依附詞例外」，這種算不符。"
 )
 MISMATCH_WHY[MISMATCH_APOSTROPHE] = (
-    "只有喉塞音單引號的有無或位置不同。排灣語 ODS 1-3 規定切分的 "
-    "[k] / ['] 要跟著原文的寫法，所以這一類多半是要決定哪一邊才對。"
+    "只有喉塞音單引號的有無或位置不同。排灣語 ODS 1-3 規定詞素切割的 "
+    "[k] / ['] 要跟著族語原句的寫法，所以這一類多半是要決定哪一邊才對。"
 )
 MISMATCH_WHY[MISMATCH_ONE] = (
-    "只差一個字母，多半是切分時多打或漏打一個音，或是照發音改寫了拼法。"
+    "只差一個字母，多半是詞素切割時多打或漏打一個音，或是照發音改寫了拼法。"
 )
 MISMATCH_WHY[MISMATCH_FEW] = "差 2-3 個字母，通常是拼法慣例不同。"
 MISMATCH_WHY[MISMATCH_MANY] = (
-    "差很多個字母，可能是換了詞、或原文與切分不是同一句。"
+    "差很多個字母，可能是換了詞、或族語原句與詞素切割不是同一句。"
 )
 MISMATCH_WHY[MISMATCH_LENGTH] = (
-    "長度差四分之一以上，通常是切分比原文少了一整段(或多了一整段)，"
+    "長度差四分之一以上，通常是詞素切割比族語原句少了一整串(或多了一整串)，"
     "內容可能遺失。"
 )
 
-# 差幾個字母算「少少仔」,超過就算多處不同。
+# 差幾個字母算「一點點」,超過就算多處不同。
 FEW_LIMIT = 3
-# 長度差這个比例以上,就當做少了一整段。
+# 長度差這個比例以上,就當做少了一整串。
 LENGTH_RATIO = 0.25
 
 
@@ -344,7 +344,7 @@ def _diff_ops(one, other):
 
 
 def _mismatch_detail(source, segmentation):
-    """原文與切分差在哪裡，寫成短短一句，例如 `pai` → `pay`。"""
+    """族語原句與詞素切割差在哪裡，寫成短短一句，例如 `pai` → `pay`。"""
     one = bare_form(source)
     other = bare_form(segmentation)
     parts = []
@@ -352,19 +352,19 @@ def _mismatch_detail(source, segmentation):
         left = one[i1:i2]
         right = other[j1:j2]
         if not left:
-            parts.append("切分多了「" + right + "」")
+            parts.append("詞素切割多了「" + right + "」")
         elif not right:
-            parts.append("切分少了「" + left + "」")
+            parts.append("詞素切割少了「" + left + "」")
         else:
             parts.append("「" + left + "」→「" + right + "」")
     return "、".join(parts)
 
 
 def _word_counts_fit(source, segmentation):
-    """原文ê詞數佮切分ê詞數敢對會起來。
+    """族語原句的詞數和詞素切割的詞數對不對得起來。
 
-    一个切分 token 內底ê = 會共原文ê幾若个詞併做一个(awa to →
-    awa=to),所以一个 token 上濟食(1 + = ê個數)个原文詞。
+    一個詞素切割 token 裡的 = 會把族語原句的幾個詞併成一個(awa to →
+    awa=to),所以一個 token 最多吃(1 + = 的個數)個族語原句的詞。
     """
     source_words = 0
     for token in source.split():
@@ -383,14 +383,14 @@ def _word_counts_fit(source, segmentation):
 
 
 def _matches(source, segmentation):
-    """原文佮切分敢對會起來:逐字仝款,而且詞數嘛對會起來。"""
+    """族語原句和詞素切割對不對得起來:逐字相同,而且詞數也對得起來。"""
     if bare_form(source) != bare_form(segmentation):
         return False
     return _word_counts_fit(source, segmentation)
 
 
 def _mismatch_kind(source, segmentation):
-    """把「原文與切分不符」再分類，才知道要怎麼處理。"""
+    """把「族語原句與詞素切割不符」再分類，才知道要怎麼處理。"""
     one = bare_form(source)
     other = bare_form(segmentation)
     if one == other:
@@ -414,7 +414,7 @@ def _mismatch_kind(source, segmentation):
     return MISMATCH_MANY
 
 
-# 句讀。原文保留、切分照慣例不留,這種差異不算錯,但要提出來討論。
+# 句讀。族語原句保留、詞素切割照慣例不留,這種差異不算錯,但要提出來討論。
 PUNCTUATION = ",.?!;:，。、？！；：「」\"“”()（）…"
 
 
@@ -429,9 +429,9 @@ def _punctuation_of(text):
 
 @dataclasses.dataclass
 class SourceCheck:
-    """原文與切分逐字比對的結果。
+    """族語原句與詞素切割逐字比對的結果。
 
-    規格寫在 features/原文切分比對.feature：
+    規格寫在 features/族語原句詞素切割比對.feature：
     passed 是通過與否，kind 是不通過的分類（通過時是 None），
     detail 是差在哪裡的一句話，punctuation_differs 是標點有沒有差。
     標點差異不影響 passed——那是另外記一筆的 warning。
@@ -444,10 +444,10 @@ class SourceCheck:
 
 
 def compare_source(source, segmentation):
-    """原文與切分逐字比對，回傳 SourceCheck。
+    """族語原句與詞素切割逐字比對，回傳 SourceCheck。
 
-    這是 features/原文切分比對.feature 的入口，assemble_entry 也用
-    同一支產生「原文與切分不符」與「標點不同」兩種問題。
+    這是 features/族語原句詞素切割比對.feature 的入口，assemble_entry 也用
+    同一支產生「族語原句與詞素切割不符」與「標點不同」兩種問題。
     """
     通過 = _matches(source, segmentation)
     分類 = None
@@ -462,12 +462,12 @@ def compare_source(source, segmentation):
     )
 
 
-# 切分的字數比原文多這麼多,就不是換行,而是同一句標了兩版。
+# 詞素切割的字數比族語原句多這麼多,就不是換行,而是同一句標了兩版。
 DUPLICATE_RATIO = 1.5
 
 
 def _is_duplicate(source_line, joined_segments):
-    """比對原文與重組後的切分，判斷是換行還是重複標註。"""
+    """比對族語原句與重組後的詞素切割，判斷是換行還是重複標註。"""
     source = bare_form(source_line)
     if not source:
         return False
@@ -477,8 +477,8 @@ def _is_duplicate(source_line, joined_segments):
 def assemble_entry(entry, log=None):
     """把 body 組成四行。組得起來回傳 True，組不起來回傳 False。
 
-    標準排法是:原文 +(切分， gloss)× n + 翻譯。四行組是 n=1,
-    長句分段是 n>1。中間的行要「拉丁、漢字」相間才組得起來。
+    標準排法是:族語原句 +(詞素切割， 詞素翻譯)× n + 華語翻譯。
+    四行段是 n=1,長句換行是 n>1。中間的行要「拉丁、漢字」相間才組得起來。
     """
     body = entry.body
     if len(body) < 3:
@@ -486,9 +486,9 @@ def assemble_entry(entry, log=None):
     middle = body[1:-1]
     if len(middle) % 2 != 0:
         return False
-    # 排版分析這一步只管切組佮四行對位,無管內容是族語抑是華語。
-    # 規組攏是華語ê時陣揣無拉丁行,照位置排就好,袂當因為按呢
-    # 就講伊組袂起來——「整組華語就毋做切分分析」是後一步ê代誌。
+    # 排版分析這一步只管切段和四行對位,不管內容是族語還是華語。
+    # 整段都是華語時找不到拉丁行,照位置排就好,不能因為這樣
+    # 就說它組不起來——「整段華語就不做詞素切割分析」是下一步的事。
     kinds = []
     for line in body:
         kinds.append(line_kind(line))
@@ -515,10 +515,10 @@ def assemble_entry(entry, log=None):
         entry.issues.append(
             Issue(
                 IssueKind.DUPLICATE_ANNOTATION, entry.path, entry.number,
-                "原文只有一句，切分卻有 " + str(len(segments)) + " 版",
+                "族語原句只有一句，詞素切割卻有 " + str(len(segments)) + " 版",
                 [
-                    ("原文", collapse_spaces(body[0])),
-                    ("切分", " ⏎ ".join(segments)),
+                    ("族語原句", collapse_spaces(body[0])),
+                    ("詞素切割", " ⏎ ".join(segments)),
                 ],
             )
         )
@@ -533,8 +533,8 @@ def assemble_entry(entry, log=None):
         entry.issues.append(
             Issue(
                 IssueKind.PUNCTUATION_DIFF, entry.path, entry.number,
-                "原文與切分的標點不同(不擋匯出)",
-                [("原文", entry.source), ("切分", entry.segmentation)],
+                "族語原句與詞素切割的標點不同(不擋匯出)",
+                [("族語原句", entry.source), ("詞素切割", entry.segmentation)],
             )
         )
     if not 比對.passed:
@@ -543,7 +543,7 @@ def assemble_entry(entry, log=None):
                 IssueKind.SOURCE_SEGMENT_MISMATCH, entry.path,
                 entry.number,
                 比對.kind + ":" + 比對.detail,
-                [("原文", entry.source), ("切分", entry.segmentation)],
+                [("族語原句", entry.source), ("詞素切割", entry.segmentation)],
             )
         )
     if log is not None:
@@ -563,10 +563,10 @@ def assemble_entry(entry, log=None):
     return True
 
 
-# 干焦數字、標點這款,毋是語料嘛毋是註記ê行(例如 0000、136.6)。
+# 只有數字、標點這種,不是語料也不是註記的行(例如 0000、136.6)。
 NOISE = re.compile(r'^[\d.\-–—:,()（）\s]+$')
 
-# gloss 行尾若有句讀,誠有可能是華語翻譯黏tī後壁。
+# 詞素翻譯行尾如果有句讀,很可能是華語翻譯黏在後面。
 SENTENCE_MARKS = "，。、？！；：,.?!;"
 
 
@@ -604,7 +604,7 @@ def _alternation_broken(middle):
 
 
 def _looks_glued(line):
-    """gloss 行尾是否黏著華語翻譯:看有沒有句讀。"""
+    """詞素翻譯行尾是否黏著華語翻譯:看有沒有句讀。"""
     for mark in SENTENCE_MARKS:
         if mark in line:
             return True
@@ -612,7 +612,7 @@ def _looks_glued(line):
 
 
 def classify_entry(entry):
-    """組不起來的組，判斷是哪一種結構異常。回傳 IssueKind 或 None。"""
+    """組不起來的段，判斷是哪一種結構異常。回傳 IssueKind 或 None。"""
     body = entry.body
     if not body:
         # 沒有編號的,split_entries 已經記為孤兒時間碼了。
@@ -633,17 +633,17 @@ def classify_entry(entry):
     if _alternation_broken(middle):
         return IssueKind.GLUED_LINE
     if len(middle) % 2 != 0:
-        return IssueKind.MISSING_GLOSS_SEGMENT
+        return IssueKind.MISSING_GLOSS_LINE
     return IssueKind.GLUED_LINE
 
 
 DETAIL = {
     IssueKind.EMPTY_ENTRY: "只有編號與時間碼，沒有內文",
-    IssueKind.STRAY_LINE: "組內有無法歸類的雜訊行",
-    IssueKind.CHINESE_ONLY: "整組都是華語，沒有族語標註",
+    IssueKind.STRAY_LINE: "段內有無法歸類的雜訊行",
+    IssueKind.CHINESE_ONLY: "整段都是華語，沒有族語標註",
     IssueKind.MISSING_TRANSLATION: "沒有第四行華語翻譯",
     IssueKind.GLUED_LINE: "有兩行黏在一起",
-    IssueKind.MISSING_GLOSS_SEGMENT: "有一段切分沒有對應的 gloss",
+    IssueKind.MISSING_GLOSS_LINE: "有一截詞素切割沒有對應的詞素翻譯",
 }
 
 
@@ -662,10 +662,10 @@ def _wide_line(body):
 
 
 def build_entry(entry, log=None):
-    """組四行;組袂起來就分類異常。回傳敢組會起來。"""
+    """組四行;組不起來就分類異常。回傳組不組得起來。"""
     if assemble_entry(entry, log):
-        # 排版分析(組四行)佮內容判斷是兩步。規組攏是華語ê嘛組會
-        # 起來,毋過袂使匯出,所以組好了後閣記一筆「純華語句」。
+        # 排版分析(組四行)和內容判斷是兩步。整段都是華語的也組得
+        # 起來,但不能匯出,所以組好之後再記一筆「純華語句」。
         if _all_han(_kinds_of(entry.body)):
             entry.issues.append(
                 Issue(
@@ -693,10 +693,10 @@ def build_entry(entry, log=None):
 
 
 def parse_corpus_file(path, rel_path, ethnic="", variant="", log=None):
-    """讀一个 docx，轉做 CorpusFile(已經組四行、已經分類)。
+    """讀一個 docx，轉成 CorpusFile(已經組四行、已經分類)。
 
-    語料ê來源是 docx。審閱註解tī word/comments.xml,抽內文ê時
-    本底就袂濫入來,所以無註解殘留通清——看
+    語料的來源是 docx。審閱註解在 word/comments.xml,抽內文時
+    本來就不會混進來,所以沒有註解殘留要清——看
     openspec/specs/corpus-parsing 的「語料來源為 docx」。
     """
     corpus = parse_text(

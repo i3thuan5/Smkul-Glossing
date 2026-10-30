@@ -59,15 +59,16 @@ def overview(pairs, issues, comments):
     return "\n".join(lines)
 
 
+VARIANT_TITLE = "依語言別統計"
 VARIANT_NOTE = (
-    "「有差異的組數」是有問題的句子數;「差異筆數」是問題的筆數。"
-    "一組可以有好幾筆——例如某一組的內文行數不同、而且第 3 行與第 4 行"
-    "各自不同，那就是 1 組、3 筆。"
+    "「有差異的段數」是有問題的段數;「差異筆數」是問題的筆數。"
+    "一段可以有好幾筆——例如某一段的內文行數不同、而且第 3 行與第 4 行"
+    "各自不同，那就是 1 段、3 筆。"
 )
 
 
 def variant_table(per_file):
-    """依語別統計。檔數與差異數都由 per_file 計算，才不會重複計。"""
+    """依語言別統計。檔數與差異數都由 per_file 計算，才不會重複計。"""
     rows = {}
     for rel_path, found in per_file:
         key = split_kind(rel_path)
@@ -80,7 +81,7 @@ def variant_table(per_file):
     for (ethnic, variant), (files, count, groups) in sorted(rows.items()):
         out.append((ethnic, variant, files, len(groups), count))
     return report.table(
-        ["族別", "語別", "檔數", "有差異的組數", "差異筆數"], out)
+        ["族別", "語言別", "檔數", "有差異的段數", "差異筆數"], out)
 
 
 def comment_section(comments):
@@ -187,7 +188,7 @@ def run(base):
         "# docx / txt 一致性檢查報告",
         "更新日期:" + report.today(),
         overview(pairs, issues, comments),
-        report.heading("依語別統計") + "\n\n" + VARIANT_NOTE +
+        report.heading(VARIANT_TITLE) + "\n\n" + VARIANT_NOTE +
         "\n\n" + variant_table(per_file),
         report.heading("YAML 的來源") + "\n\n" + report.YAML_SOURCE_WHY,
         # 自動處理那一章只放在 glossing 報告,這份報告談的是

@@ -52,7 +52,7 @@ def table(headers, rows):
 def issue_label(issue):
     """報告上顯示的問題名稱。
 
-    「原文與切分不符」拆到細分類型(只差單引號、只差一個字母……),
+    「族語原句與詞素切割不符」拆到細分類型(只差單引號、只差一個字母……),
     這樣總覽的表格就分得出哪一類要優先處理。
     """
     if issue.kind is IssueKind.SOURCE_SEGMENT_MISMATCH and \
@@ -95,7 +95,7 @@ def norm_section(log, compare_note=""):
     lines = [heading("自動處理與比對政策"), ""]
     lines.append(
         "程式讀語料時做過下列轉換與重組。每一項只寫摘要與這次的筆數，"
-        "**真實例子(原句子、處理後的句子、檔案與組別)寫在對應的 "
+        "**真實例子(原句子、處理後的句子、檔案與段別)寫在對應的 "
         "`features/*.feature` 裡**，請直接看那裡，規則與例子才只有一份。"
     )
     if compare_note:
@@ -130,9 +130,9 @@ def severity_split(issues):
 
 
 def detail_section(title, issues, limit=40):
-    """錯誤明細，依檔案分組，每組定位到編號。
+    """錯誤明細，依檔案分組，每段定位到編號。
 
-    有 compare 的(txt/docx、原文/切分)分成獨立的子項，較好對照。
+    有 compare 的(txt/docx、族語原句/詞素切割)分成獨立的子項，較好對照。
     """
     lines = [heading(title), ""]
     if not issues:
@@ -145,7 +145,7 @@ def detail_section(title, issues, limit=40):
         lines.append("")
         for issue in found[:limit]:
             if issue.number:
-                where = "第" + issue.number + "組"
+                where = "第" + issue.number + "段"
             else:
                 where = "整個檔案"
             head = "- " + where + "|**" + issue_label(issue) + "**"
@@ -216,90 +216,6 @@ def write(name, sections):
     return path
 
 
-def uncertain_section(counter):
-    """「不確定」標記統計:全大寫拉丁 gloss，依 ODS 1-2 合法但要呈現。"""
-    lines = [heading("「不確定」標記統計"), ""]
-    lines.append(
-        "依 ODS 各 sheet 的 1-2 條，標注者不確定某個詞綴是什麼時，"
-        "用全大寫拉丁字母(或 `?`)代替 gloss。這些**不算錯誤**，"
-        "但列在這裡讓您看到規模與分布。建議補充到"
-        "《常用構詞標記清單》。"
-    )
-    lines.append("")
-    if not counter:
-        lines.append("(無)")
-        return "\n".join(lines)
-    rows = []
-    for (marker, sheet), number in counter.most_common():
-        rows.append((code(marker), sheet, number))
-    lines.append(table(["標記", "語言", "出現次數"], rows))
-    return "\n".join(lines)
-
-
-def hard_morphology_section(records, limit=60):
-    """「構詞判斷困難」:詞根判袂出來ê詞素,依詞素×語言彙總。
-
-    這毋是錯誤——YAML ê「構詞」欄記做「無法判斷」,規組照常匯出。
-    分類佮例攏tī features/構詞判定.feature,這搭干焦寫摘要佮統計。
-    """
-    lines = [heading("構詞判斷困難"), ""]
-    lines.append(
-        "下面這些詞素，程式判不出哪一段是詞根，YAML 的「構詞」欄"
-        "記成 `無法判斷`。這**不算錯誤，也不擋匯出**——整組照常"
-        "進 YAML，只是那一段還沒有定論。\n\n"
-        "判定的完整流程、每一種情形的真實例子，寫在 "
-        "`features/構詞判定.feature` 的「判斷方法」與各 Scenario，"
-        "這一章只寫摘要與統計。"
-    )
-    lines.append("")
-    if not records:
-        lines.append("(無)")
-        return "\n".join(lines)
-
-    cases = OrderedDict()
-    for gloss, sheet, case, seg, path, number in records:
-        cases.setdefault(case, []).append((gloss, sheet, path, number))
-    for case, found in cases.items():
-        lines.append("")
-        lines.append(heading(case, 3))
-        lines.append("")
-        lines.append(
-            "共 " + str(len(found)) + " 個詞素。詳見 "
-            "`features/構詞判定.feature`。")
-
-    lines.append("")
-    lines.append(heading("依詞素與語言彙總", 3))
-    lines.append("")
-    lines.append(
-        "次數高又跨多個檔案的，多半是《常用構詞標記清單》缺這一條;"
-        "次數少又零星的，多半是標注筆誤。")
-    lines.append("")
-    counts = OrderedDict()
-    for gloss, sheet, case, seg, path, number in records:
-        counts.setdefault((gloss, sheet), []).append((path, number))
-    ordered = sorted(counts.items(), key=lambda item: -len(item[1]))
-    rows = []
-    for (gloss, sheet), places in ordered[:limit]:
-        files = set()
-        for path, number in places:
-            files.add(path)
-        sample = []
-        for path, number in places[:3]:
-            sample.append(path.split("/")[-1] + " 第" + number + "組")
-        rows.append((
-            code(gloss), sheet, len(places), len(files), "、".join(sample),
-        ))
-    lines.append(
-        table(["詞素", "語言", "次數", "檔案數", "實例(最多 3 個)"], rows))
-    if len(ordered) > limit:
-        lines.append("")
-        lines.append(
-            "(其餘 " + str(len(ordered) - limit) + " 種詞素未列出)")
-    lines.append("")
-    lines.append("建議補充到《常用構詞標記清單》。")
-    return "\n".join(lines)
-
-
 SAMPLE_LIMIT = 3
 
 
@@ -319,7 +235,7 @@ def render_issue(issue):
     lines = []
     where = issue.path.split("/")[-1]
     if issue.number:
-        where = where + " 第" + issue.number + "組"
+        where = where + " 第" + issue.number + "段"
     detail = issue.detail
     if ":" in detail:
         detail = detail.split(":", 1)[-1]
@@ -365,8 +281,8 @@ def kind_section(title, issues, why_of, order=None):
 
 
 def variant_section(rows, headers):
-    """依語別統計表。"""
-    lines = [heading("依語別統計"), ""]
+    """依語言別統計表。"""
+    lines = [heading("依語言別統計"), ""]
     lines.append(table(headers, rows))
     return "\n".join(lines)
 
@@ -379,16 +295,16 @@ FORMAT_INTRO = (
 )
 
 ENTRY_SHAPE = (
-    "一組語料（一個句子）由「編號 + 時間碼 + 四行標註」組成。四行的"
+    "一段語料（一個句子）由「編號 + 時間碼 + 四行標註」組成。四行的"
     "角色:\n\n"
-    "1. **第一行 族語原文**:原始書寫形式，依各族現行書寫系統。\n"
-    "2. **第二行 構詞切分**:把每個詞切成詞素，用構詞符號標示每個"
+    "1. **第一行 族語原句**:原始書寫形式，依各族現行書寫系統。\n"
+    "2. **第二行 詞素切割**:把每個詞切成詞素，用切割符號標示每個"
     "詞素怎麼接。\n"
-    "3. **第三行 gloss**:逐詞素的華語對譯，詞數與符號位置要與第二行"
-    "呼應（見 `features/切分與glossing對應.feature`）。\n"
-    "4. **第四行 華語翻譯**:整句自由翻譯，不受前三行的切分限制。\n\n"
-    "編號通常自己一行，也有編號與時間碼同行的（東排灣 1）。組與組"
-    "之間通常空一行，但語料裡有缺空行的情形，所以組界一律以"
+    "3. **第三行 詞素翻譯**:逐詞素的華語對譯，詞數與符號位置要與第二行"
+    "呼應（見 `features/詞素切割與詞素翻譯對應.feature`）。\n"
+    "4. **第四行 華語翻譯**:整句自由翻譯，不受前三行的詞素切割限制。\n\n"
+    "編號通常自己一行，也有編號與時間碼同行的（東排灣 1）。段與段"
+    "之間通常空一行，但語料裡有缺空行的情形，所以段界一律以"
     "「編號行 + 時間碼行」判斷，不依賴空行"
     "（見 `features/排版分析.feature`）。"
 )
@@ -407,10 +323,10 @@ CLITIC_NOTE = (
 )
 
 LOANWORD_NOTE = (
-    "外來語借詞在第三行的 gloss 後面加語言標籤:`.日語`、`.華語`、"
+    "外來語借詞在第三行的詞素翻譯後面加語言標籤:`.日語`、`.華語`、"
     "`.台語`、`.英語`。例如 `sanzyuici` / `三十一.日語`、"
     "`ping-en` / `冰.華語-受焦`。第一行依實際發音書寫（可含連字號，"
-    "如 `san-zyu-ici`），第二行合併成一個 token。`.` 不是切分符號，"
+    "如 `san-zyu-ici`），第二行合併成一個 token。`.` 不是切割符號，"
     "不影響詞素的數量。"
 )
 
@@ -459,7 +375,7 @@ def format_section(files, sheet_names=None):
     """「語料格式說明」:語料長什麼樣。規則本身在 features/。"""
     lines = [heading("語料格式說明"), "", FORMAT_INTRO, ""]
 
-    lines.append(heading("一組語料的結構", 3))
+    lines.append(heading("一段語料的結構", 3))
     lines.append("")
     lines.append(ENTRY_SHAPE)
     lines.append("")
@@ -484,7 +400,7 @@ def format_section(files, sheet_names=None):
             "（南排灣 3 前段 SRT 式、後段逗號式），兩種各算一次。")
     lines.append("")
 
-    lines.append(heading("第二行的切分符號", 3))
+    lines.append(heading("第二行的切割符號", 3))
     lines.append("")
     rows = []
     for symbol, (meaning, sample) in SYMBOL_MEANING.items():

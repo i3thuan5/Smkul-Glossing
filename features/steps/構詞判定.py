@@ -23,7 +23,7 @@ def step_標記清單(context, language):
     context.markers = MarkerList.from_rows(rows)
 
 
-@when('切分是 "{segmentation}"，glossing 是 "{gloss}"')
+@when('詞素切割是 "{segmentation}"，詞素翻譯是 "{gloss}"')
 def step_判定(context, segmentation, gloss):
     context.segmentation = segmentation
     context.gloss = gloss
@@ -45,8 +45,8 @@ def step_結果(context):
         # 表格裡寫做（無法判斷），程式的值是「無法判斷」。
         expect.append((row["形"], row["義"], row["構詞"].strip("（）")))
     assert got == expect, (
-        "\n切分:" + context.segmentation +
-        "\nglossing:" + context.gloss +
+        "\n詞素切割:" + context.segmentation +
+        "\n詞素翻譯:" + context.gloss +
         "\n預期:" + str(expect) +
         "\n實際:" + str(got)
     )
