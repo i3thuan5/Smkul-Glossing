@@ -7,10 +7,14 @@ from scripts.smkul import languages
 
 
 class Severity(enum.Enum):
-    """問題的嚴重度。ERROR 會影響 exit code，其他不會。"""
+    """問題的嚴重度。ERROR 會影響 exit code，其他不會。
+
+    ERROR 與 NOTICE 不匯出；EXPORTED_ERROR 與 WARNING 照常匯出。
+    """
 
     ERROR = "錯誤"
-    WARNING = "warning"
+    EXPORTED_ERROR = "錯誤（照常匯出）"
+    WARNING = "警告（照常匯出）"
     NOTICE = "現象"
 
 
@@ -28,7 +32,7 @@ class IssueKind(enum.Enum):
     CHINESE_ONLY = "純華語句"
     DUPLICATE_ANNOTATION = "重複標註"
     SOURCE_SEGMENT_MISMATCH = "族語原句與詞素切割不符"
-    PUNCTUATION_DIFF = "標點不同"
+    SEGMENT_PUNCTUATION = "詞素切割有標點"
     # 詞素切割行與詞素翻譯行的對應。這五類的值與
     # features/詞素切割與詞素翻譯對應.feature 的 Scenario 名一樣。
     GLOSS_FEWER = "詞素翻譯的詞比詞素切割少"
@@ -67,7 +71,7 @@ SEVERITY = {
     IssueKind.FILENAME_MISMATCH: Severity.ERROR,
     IssueKind.ENTRY_COUNT_MISMATCH: Severity.ERROR,
     IssueKind.CONTENT_DIFF: Severity.ERROR,
-    IssueKind.PUNCTUATION_DIFF: Severity.WARNING,
+    IssueKind.SEGMENT_PUNCTUATION: Severity.EXPORTED_ERROR,
     IssueKind.MIXED_TIMECODE_FORMAT: Severity.WARNING,
     IssueKind.UNKNOWN_TIMECODE_UNIT: Severity.WARNING,
 }
@@ -87,6 +91,8 @@ class Issue:
     number: str = ""
     detail: str = ""
     compare: list = field(default_factory=list)
+    # 問題 ID,對得到校對表。由 proofreading.IdBook 算。
+    id: str = ""
 
     @property
     def severity(self):
@@ -124,9 +130,11 @@ KIND_WHY = {
         "用族語原句與詞素切割的長度比判斷出來的。",
     IssueKind.SOURCE_SEGMENT_MISMATCH:
         "詞素切割行去掉切割符號後，與族語原句逐字比對不符。詳細分類見下面。",
-    IssueKind.PUNCTUATION_DIFF:
-        "族語原句保留句讀、詞素切割沒有。這不算錯誤、不擋匯出，列出來"
-        "是要確認詞素切割行不留句讀是不是預期的慣例。",
+    IssueKind.SEGMENT_PUNCTUATION:
+        "2026.09 會議案由五決議：詞素切割行不能有標點。字母、漢字、數字、"
+        "切割符號、單引號、空白，以及書寫系統明定的符號（阿美語的 `^`、"
+        "`:`，泰雅語的 `_` 等）以外的字元都算。這是錯誤，但照常匯出；"
+        "每段的提示寫出第幾個詞、應該怎麼改。",
     IssueKind.GLOSS_FEWER:
         "詞素翻譯行的詞比詞素切割行少，兩行沒辦法一個詞對一個詞。",
     IssueKind.GLOSS_MORE:
@@ -205,11 +213,13 @@ class Entry:
     translation: str = ""
     words: list = field(default_factory=list)
     issues: list = field(default_factory=list)
+    # 詞素切割行裡待討論的符號，{名稱: 處數}，報告的待討論章用。
+    discuss: dict = field(default_factory=dict)
 
     def is_clean(self):
         """沒有 ERROR 也沒有 NOTICE 才可以匯出。"""
         for issue in self.issues:
-            if issue.severity is not Severity.WARNING:
+            if issue.severity in (Severity.ERROR, Severity.NOTICE):
                 return False
         return True
 

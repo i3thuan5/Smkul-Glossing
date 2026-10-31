@@ -45,6 +45,23 @@ class TestIssue(unittest.TestCase):
         self.assertIs(issue.severity, Severity.NOTICE)
         self.assertFalse(issue.is_error())
 
+    def test_詞素切割有標點_是錯誤照常匯出(self):
+        issue = Issue(IssueKind.SEGMENT_PUNCTUATION, "a.txt", "12")
+        self.assertIs(issue.severity, Severity.EXPORTED_ERROR)
+        self.assertFalse(issue.is_error())
+
+    def test_四級嚴重度的名稱(self):
+        self.assertEqual(Severity.ERROR.value, "錯誤")
+        self.assertEqual(Severity.EXPORTED_ERROR.value, "錯誤（照常匯出）")
+        self.assertEqual(Severity.WARNING.value, "警告（照常匯出）")
+        self.assertEqual(Severity.NOTICE.value, "現象")
+
+    def test_沒有標點不同這一類(self):
+        names = []
+        for kind in IssueKind:
+            names.append(kind.value)
+        self.assertNotIn("標點不同", names)
+
 
 class TestKindNames(unittest.TestCase):
     """分類名照 meeting-terms-yaml design 決策 1。"""
@@ -139,6 +156,18 @@ class TestYaml(unittest.TestCase):
             Issue(IssueKind.MIXED_TIMECODE_FORMAT, "a.txt", "26")
         )
         self.assertTrue(entry.is_clean())
+
+    def test_錯誤照常匯出_不擋匯出(self):
+        entry = self.build_entry()
+        entry.issues.append(
+            Issue(IssueKind.SEGMENT_PUNCTUATION, "a.txt", "26")
+        )
+        self.assertTrue(entry.is_clean())
+
+    def test_現象_仍不匯出(self):
+        entry = self.build_entry()
+        entry.issues.append(Issue(IssueKind.CHINESE_ONLY, "a.txt", "26"))
+        self.assertFalse(entry.is_clean())
 
 
 class TestNormLog(unittest.TestCase):

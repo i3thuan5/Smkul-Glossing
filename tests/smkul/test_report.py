@@ -43,17 +43,21 @@ class TestSections(unittest.TestCase):
         return [
             Issue(IssueKind.GLUED_LINE, "a.txt", "26", "黏著"),
             Issue(IssueKind.GLUED_LINE, "a.txt", "34", "也黏在一起"),
-            Issue(IssueKind.PUNCTUATION_DIFF, "b.txt", "1", "標點"),
+            Issue(IssueKind.MIXED_TIMECODE_FORMAT, "b.txt", "", "混用"),
+            Issue(IssueKind.SEGMENT_PUNCTUATION, "b.txt", "1", "標點"),
             Issue(IssueKind.CHINESE_ONLY, "b.txt", "112", "華語"),
         ]
 
-    def test_依嚴重度分(self):
-        errors, warnings, notices = report.severity_split(self.build_issues())
+    def test_依嚴重度分四組(self):
+        errors, exported, warnings, notices = report.severity_split(
+            self.build_issues())
         self.assertEqual(len(errors), 2)
+        self.assertEqual(len(exported), 1)
         self.assertEqual(len(warnings), 1)
         self.assertEqual(len(notices), 1)
         for issue in errors:
             self.assertIs(issue.severity, Severity.ERROR)
+        self.assertIs(exported[0].kind, IssueKind.SEGMENT_PUNCTUATION)
 
     def test_依檔案分組(self):
         groups = report.group_by_path(self.build_issues())
@@ -86,9 +90,121 @@ class TestSections(unittest.TestCase):
         self.assertIn("features/排版分析.feature", got)
         self.assertIn("features/時間碼.feature", got)
 
+    def test_明細附_id(self):
+        issue = Issue(IssueKind.GLUED_LINE, "a.txt", "26", "黏著")
+        issue.id = "ISSUE-00000001"
+        got = report.detail_section("明細", [issue])
+        self.assertIn("- 第26段（`ISSUE-00000001`）|**行黏在一起**", got)
+
+    def test_例子附_id(self):
+        issue = Issue(IssueKind.GLUED_LINE, "阿美族/a.txt", "26", "黏著")
+        issue.id = "ISSUE-00000001"
+        self.assertEqual(report.render_issue(issue),
+                         ["- a.txt 第26段（`ISSUE-00000001`）|黏著"])
+
     def test_例子定位到段(self):
         issue = Issue(IssueKind.GLUED_LINE, "阿美族/a.txt", "26", "黏著")
         self.assertEqual(report.render_issue(issue), ["- a.txt 第26段|黏著"])
+
+    def test_例子只對族語原句與詞素切割不符切掉分類(self):
+        issue = Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, "a.txt", "62",
+                      "只差一個字母:「l」→「r」")
+        self.assertEqual(
+            report.render_issue(issue), ["- a.txt 第62段|「l」→「r」"])
+
+    def test_詞素切割有標點的提示整串保留(self):
+        hint = ("詞素切割第 1 個詞的 `Yu:m-uwah` 有標點「:」，程式判斷要刪掉，"
+                "因為詞素切割不能有標點，應該寫是 `Yum-uwah`")
+        issue = Issue(IssueKind.SEGMENT_PUNCTUATION, "a.txt", "59", hint)
+        self.assertEqual(
+            report.render_issue(issue), ["- a.txt 第59段|" + hint])
+
+
+class TestTeacherChapters(unittest.TestCase):
+    """老師在校對表填的判斷,報告裡要看得到。"""
+
+    def pairs(self, note):
+        issue = Issue(IssueKind.SEGMENT_PUNCTUATION, "泰雅族/賽考利克/1.docx",
+                      "59", "詞素切割第 1 個詞的 `Yu:m-uwah` 有標點「:」")
+        issue.id = "ISSUE-00000001"
+        return [(issue, note)]
+
+    def test_要討論的項目(self):
+        got = report.teacher_discuss_section(
+            "老師標要討論的項目", self.pairs("Yu: 是說話者"))
+        self.assertIn("### 泰雅族/賽考利克/1.docx(1 筆)", got)
+        self.assertIn("- 第59段（`ISSUE-00000001`）|**詞素切割有標點**", got)
+        self.assertIn("  - 備註:Yu: 是說話者", got)
+
+    def test_沒有要討論的寫無(self):
+        got = report.teacher_discuss_section("老師標要討論的項目", [])
+        self.assertIn("（無）", got)
+
+    def test_確認過的列總筆數與提示(self):
+        got = report.confirmed_section(
+            "老師確認過、不是錯誤", self.pairs("是說話者"), [])
+        self.assertIn("共 1 筆", got)
+        self.assertIn("`Yu:m-uwah`", got)
+        self.assertIn("  - 備註:是說話者", got)
+
+    def test_讀取問題列在開頭(self):
+        got = report.confirmed_section(
+            "老師確認過、不是錯誤", [], ["排灣.xlsx 第 2 列的判斷「誤報」"])
+        self.assertLess(got.index("「誤報」"), got.index("（無）"))
+
+
+class TestDiscuss(unittest.TestCase):
+    """待討論章的挑法:語言別、檔案輪流挑，最多 20 段，重跑一樣。"""
+
+    def rows(self):
+        out = []
+        for path, count in (("泰雅族/賽考利克/1.docx", 30),
+                            ("泰雅族/賽考利克/2.docx", 3),
+                            ("排灣族/中排灣/1.docx", 5)):
+            ethnic = path.split("/")[0][:-1]
+            variant = path.split("/")[1]
+            for number in range(1, count + 1):
+                out.append(report.DiscussRow(
+                    ethnic, variant, path, str(number), "原句", "切割", 1))
+        return out
+
+    def test_最多二十段(self):
+        self.assertEqual(len(report.pick_rows(self.rows())), 20)
+
+    def test_輪流挑(self):
+        picked = report.pick_rows(self.rows())
+        paths = []
+        for row in picked[:3]:
+            paths.append(row.path)
+        self.assertEqual(
+            paths,
+            ["排灣族/中排灣/1.docx", "泰雅族/賽考利克/1.docx",
+             "泰雅族/賽考利克/2.docx"],
+        )
+        numbers = []
+        for row in picked:
+            if row.path == "泰雅族/賽考利克/2.docx":
+                numbers.append(row.number)
+        self.assertEqual(numbers, ["1", "2", "3"])
+
+    def test_重跑一樣(self):
+        self.assertEqual(
+            report.pick_rows(self.rows()), report.pick_rows(self.rows()))
+
+    def test_章節寫段數與處數(self):
+        rows = [report.DiscussRow(
+            "泰雅", "賽考利克", "泰雅族/賽考利克/1.docx", "9",
+            "nanu yasa lga,", "nanu.yasa la+ga", 2)]
+        got = report.discuss_section(
+            "待討論", "說明", [("`+`", "加號的說明", rows)])
+        self.assertIn("### `+`(1 段，2 處)", got)
+        self.assertIn("加號的說明", got)
+        self.assertIn("- 1.docx 第9段", got)
+        self.assertIn("  - 詞素切割:`nanu.yasa la+ga`", got)
+
+    def test_沒有的時候寫無(self):
+        got = report.discuss_section("待討論", "說明", [("`+`", "說明", [])])
+        self.assertIn("(無)", got)
 
     def test_依語言別統計(self):
         got = report.variant_section(

@@ -2,7 +2,7 @@
 
 import datetime
 import os
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, namedtuple
 
 from scripts.smkul.entry import (NORM_FEATURE, IssueKind, Severity,
                                  code)
@@ -116,17 +116,35 @@ def norm_section(log, compare_note=""):
 
 
 def severity_split(issues):
+    """依嚴重度分成四組:錯誤、錯誤（照常匯出）、警告（照常匯出）、現象。"""
     errors = []
+    exported = []
     warnings = []
     notices = []
     for issue in issues:
         if issue.severity is Severity.ERROR:
             errors.append(issue)
+        elif issue.severity is Severity.EXPORTED_ERROR:
+            exported.append(issue)
         elif issue.severity is Severity.WARNING:
             warnings.append(issue)
         else:
             notices.append(issue)
-    return errors, warnings, notices
+    return errors, exported, warnings, notices
+
+
+def _with_id(where, issue):
+    """位置後面附上問題 ID,對得到校對表。"""
+    if issue.id:
+        return where + "（`" + issue.id + "`）"
+    return where
+
+
+def _where(issue):
+    """明細裡的位置:第幾段,或整個檔案。"""
+    if issue.number:
+        return _with_id("第" + issue.number + "段", issue)
+    return _with_id("整個檔案", issue)
 
 
 def detail_section(title, issues, limit=40):
@@ -144,11 +162,7 @@ def detail_section(title, issues, limit=40):
         lines.append(heading(path + "(" + str(len(found)) + " 筆)", 3))
         lines.append("")
         for issue in found[:limit]:
-            if issue.number:
-                where = "第" + issue.number + "段"
-            else:
-                where = "整個檔案"
-            head = "- " + where + "|**" + issue_label(issue) + "**"
+            head = "- " + _where(issue) + "|**" + issue_label(issue) + "**"
             if issue.detail:
                 head = head + ":" + issue.detail
             lines.append(head)
@@ -230,15 +244,27 @@ def collect_samples(issues, limit=SAMPLE_LIMIT):
     return samples
 
 
+def shown_detail(issue):
+    """例子與校對表顯示的原因。
+
+    「族語原句與詞素切割不符」的 detail 是「分類:差異」,分類已經是
+    小節名稱,這裡只留差異。其他問題的 detail 可能引用語料裡的冒號
+    (例如 `Yu:m-uwah`),不能切。
+    """
+    detail = issue.detail
+    if issue.kind is IssueKind.SOURCE_SEGMENT_MISMATCH and ":" in detail:
+        detail = detail.split(":", 1)[-1]
+    return detail
+
+
 def render_issue(issue):
     """一筆例子:位置、原因，兩邊對照分開列。"""
     lines = []
     where = issue.path.split("/")[-1]
     if issue.number:
         where = where + " 第" + issue.number + "段"
-    detail = issue.detail
-    if ":" in detail:
-        detail = detail.split(":", 1)[-1]
+    where = _with_id(where, issue)
+    detail = shown_detail(issue)
     if detail:
         lines.append("- " + where + "|" + detail)
     else:
@@ -277,6 +303,134 @@ def kind_section(title, issues, why_of, order=None):
         for issue in found:
             for line in render_issue(issue):
                 lines.append(line)
+    return "\n".join(lines)
+
+
+def _teacher_lines(pairs, with_detail):
+    """老師判斷過的問題,依檔案分組。pairs 是 (Issue, 備註)。"""
+    lines = []
+    groups = OrderedDict()
+    for issue, note in pairs:
+        groups.setdefault(issue.path, []).append((issue, note))
+    for path, found in groups.items():
+        lines.append("")
+        lines.append(heading(path + "(" + str(len(found)) + " 筆)", 3))
+        lines.append("")
+        for issue, note in found:
+            head = "- " + _where(issue) + "|**" + issue_label(issue) + "**"
+            detail = shown_detail(issue)
+            if with_detail and detail:
+                head = head + ":" + detail
+            lines.append(head)
+            if note:
+                lines.append("  - 備註:" + note)
+    return lines
+
+
+def teacher_discuss_section(title, pairs):
+    """老師在校對表標「要討論」的項目,給下次開會用。"""
+    lines = [heading(title), ""]
+    lines.append(
+        "族語老師在校對表標「要討論」的問題。這些問題照常算在上面的"
+        "總覽與問題章，這裡另外列出來，附老師的備註。")
+    if not pairs:
+        lines.append("")
+        lines.append("（無）")
+        return "\n".join(lines)
+    for line in _teacher_lines(pairs, False):
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def confirmed_section(title, pairs, problems):
+    """老師確認過、不是錯誤的問題,放在報告最後。
+
+    problems 是讀回校對表時遇到的問題(判斷欄寫錯字、判斷互相矛盾),
+    列在這一章的開頭。
+    """
+    lines = [heading(title), ""]
+    if problems:
+        lines.append("讀回校對表時的提醒:")
+        lines.append("")
+        for problem in problems:
+            lines.append("- " + problem)
+        lines.append("")
+    lines.append(
+        "族語老師在校對表標「docx 正確，程式判斷錯」的問題。這些問題"
+        "不算在上面的總覽與問題章，也不擋匯出，共 " + str(len(pairs)) +
+        " 筆。")
+    if not pairs:
+        lines.append("")
+        lines.append("（無）")
+        return "\n".join(lines)
+    for line in _teacher_lines(pairs, True):
+        lines.append(line)
+    return "\n".join(lines)
+
+
+# 待討論章的一段語料。count 是這一段裡那種符號的處數。
+DiscussRow = namedtuple(
+    "DiscussRow",
+    ["ethnic", "variant", "path", "number", "source", "segmentation",
+     "count"],
+)
+# 待討論章每一節最多列幾段。
+DISCUSS_LIMIT = 20
+
+
+def pick_rows(rows, limit=DISCUSS_LIMIT):
+    """在語言別、檔案之間輪流挑，最多 limit 段。挑法固定，重跑一樣。
+
+    依「族別、語言別、檔案」排序分組，每一輪從每個檔案拿下一段。
+    """
+    groups = OrderedDict()
+    for key in sorted(set(_group_keys(rows))):
+        groups[key] = []
+    for row in rows:
+        groups[(row.ethnic, row.variant, row.path)].append(row)
+    picked = []
+    turn = 0
+    while len(picked) < limit:
+        took = False
+        for found in groups.values():
+            if turn < len(found) and len(picked) < limit:
+                picked.append(found[turn])
+                took = True
+        if not took:
+            break
+        turn += 1
+    return picked
+
+
+def _group_keys(rows):
+    keys = []
+    for row in rows:
+        keys.append((row.ethnic, row.variant, row.path))
+    return keys
+
+
+def discuss_section(title, intro, parts):
+    """待討論章。parts 是 (小節名稱, 說明, DiscussRow 清單)。"""
+    lines = [heading(title), "", intro]
+    for label, why, rows in parts:
+        places = 0
+        for row in rows:
+            places += row.count
+        lines.append("")
+        lines.append(heading(
+            label + "(" + str(len(rows)) + " 段，" + str(places) + " 處)",
+            3))
+        lines.append("")
+        lines.append(why)
+        lines.append("")
+        if not rows:
+            lines.append("(無)")
+            continue
+        for row in pick_rows(rows):
+            lines.append(
+                "- " + row.path.split("/")[-1] + " 第" + row.number + "段")
+            lines.append("  - 族語原句:" + code(row.source))
+            lines.append("  - 詞素切割:" + code(row.segmentation))
     return "\n".join(lines)
 
 

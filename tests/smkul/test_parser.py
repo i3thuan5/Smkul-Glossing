@@ -16,6 +16,7 @@ from scripts.smkul.parser import (
     assemble_entry,
     bare_form,
     build_entry,
+    check_segment_punctuation,
     normalize_en_dash,
     parse_text,
     parse_timecode,
@@ -158,6 +159,15 @@ class TestSourceSegmentation(unittest.TestCase):
             "pisanoamisacaciyawawato",
         )
 
+    def test_bare_form_留阿美語的_喉塞音字母(self):
+        # 《原住民族語言書寫系統》的阿美語，^ 是喉塞音字母。
+        self.assertEqual(bare_form("pa^tang"), "pa^tang")
+
+    def test_bare_form_去掉書寫系統的符號(self):
+        # 阿美語的長音 :、泰雅語的 _ 是符號，不是字母。
+        self.assertEqual(bare_form("iti:raw"), "itiraw")
+        self.assertEqual(bare_form("m_yan"), "myan")
+
 
 class TestClassify(unittest.TestCase):
     """組不起來的段,要分得出是哪一種異常。"""
@@ -228,27 +238,147 @@ class TestClassify(unittest.TestCase):
 
 
 class TestPunctuation(unittest.TestCase):
-    """標點不同:不擋匯出,但要記下來提出討論。"""
+    """族語原句有標點、詞素切割沒有，算通過，不記任何問題。"""
 
-    def test_標點不同是_warning_不擋匯出(self):
+    def test_族語原句有標點_詞素切割沒有_不記任何問題(self):
         corpus = parse("典型_逗號式.txt")
         entry = corpus.entries[0]
         build_entry(entry)
         self.assertIn(",", entry.source)
         self.assertNotIn(",", entry.segmentation)
-        kinds = []
+        self.assertEqual(entry.issues, [])
+
+
+def segment_entry(segmentation, source=None, ethnic=""):
+    """用一段四行的語料組出 Entry，跑過 build_entry。"""
+    if source is None:
+        source = segmentation
+    text = "1\n0:00:00.000,0:00:02.000\n" + source + "\n" + \
+        segmentation + "\n詞\n華語\n"
+    corpus = parse_text(text, path="t.txt", ethnic=ethnic)
+    entry = corpus.entries[0]
+    build_entry(entry, ethnic=ethnic)
+    return entry
+
+
+class TestSegmentPunctuation(unittest.TestCase):
+    """詞素切割行不能有標點。規格見 features/詞素切割標點.feature。"""
+
+    def hint(self, segmentation, ethnic):
+        return check_segment_punctuation(segmentation, ethnic).hint
+
+    def test_詞尾標點_刪掉(self):
+        self.assertEqual(
+            self.hint("iq kiya.", "太魯閣"),
+            "詞素切割第 2 個詞的 `kiya.` 有標點「.」，程式判斷要刪掉，"
+            "因為詞素切割不能有標點，應該寫是 `kiya`",
+        )
+
+    def test_一個詞好幾種標點_依出現順序列(self):
+        self.assertEqual(
+            self.hint("azua?!", "排灣"),
+            "詞素切割第 1 個詞的 `azua?!` 有標點「?」「!」，程式判斷要刪掉，"
+            "因為詞素切割不能有標點，應該寫是 `azua`",
+        )
+
+    def test_只有符號的詞_整個詞刪掉_寫整行(self):
+        self.assertEqual(
+            self.hint("pa-'a-pazangal ＠", "排灣"),
+            "詞素切割第 2 個詞的 `＠` 有符號「＠」，程式判斷要整個詞刪掉，"
+            "因為詞素切割不能有標點，應該寫是 `pa-'a-pazangal`",
+        )
+
+    def test_括號_程式無法判斷(self):
+        self.assertEqual(
+            self.hint("nu a(ne)ma.aya-a(ne)ma.aya='en", "排灣"),
+            "詞素切割第 2 個詞的 `a(ne)ma.aya-a(ne)ma.aya='en` 有括號「()」，"
+            "程式無法判斷，請標注者確認",
+        )
+
+    def test_好幾個詞_用分號接起來(self):
+        self.assertEqual(
+            self.hint("aji. uri. o brah", "太魯閣"),
+            "詞素切割第 1 個詞的 `aji.` 有標點「.」，程式判斷要刪掉，"
+            "因為詞素切割不能有標點，應該寫是 `aji`；"
+            "詞素切割第 2 個詞的 `uri.` 有標點「.」，程式判斷要刪掉，"
+            "因為詞素切割不能有標點，應該寫是 `uri`",
+        )
+
+    def test_阿美語的_喉塞音與長音不算標點(self):
+        self.assertEqual(self.hint("Ma-so^so haw", "阿美"), "")
+        self.assertEqual(self.hint("O no iti:ya-ay=ho sanay", "阿美"), "")
+
+    def test_別的語言的_喉塞音符號算標點(self):
+        self.assertIn("有標點「^」", self.hint("pa^tang", "排灣"))
+
+    def test_泰雅語的底線不算標點(self):
+        self.assertEqual(self.hint("k_yaqih hi=nya", "泰雅"), "")
+
+    def test_別的語言的底線算標點(self):
+        self.assertIn("有標點「_」", self.hint("k_yaqih", "排灣"))
+
+    def test_邵語的點與賽夏語的冒號不算標點(self):
+        self.assertEqual(self.hint("put.huum", "邵"), "")
+        self.assertEqual(self.hint("lamo:", "賽夏"), "")
+
+    def test_加號_不算標點_列入待討論(self):
+        result = check_segment_punctuation("la+ga yan+ka", "泰雅")
+        self.assertEqual(result.hint, "")
+        self.assertEqual(result.discuss["+"], 2)
+
+    def test_詞中間的點_列入待討論(self):
+        result = check_segment_punctuation("kika kiya.ga", "太魯閣")
+        self.assertEqual(result.hint, "")
+        self.assertEqual(result.discuss["詞中間的 ."], 1)
+
+    def test_詞頭的點仍算標點(self):
+        result = check_segment_punctuation("nanu.yasa .qu", "泰雅")
+        self.assertIn("`.qu` 有標點「.」", result.hint)
+        self.assertEqual(result.discuss["詞中間的 ."], 1)
+
+    def test_獨立的說話者標記_列入待討論(self):
+        result = check_segment_punctuation(
+            "K: anema ta azua? Lj: 電土", "排灣")
+        self.assertEqual(result.discuss["說話者標記"], 2)
+        self.assertEqual(
+            result.hint,
+            "詞素切割第 4 個詞的 `azua?` 有標點「?」，程式判斷要刪掉，"
+            "因為詞素切割不能有標點，應該寫是 `azua`",
+        )
+
+    def test_黏著的說話者標記_當一般族語詞(self):
+        result = check_segment_punctuation("Yu:m-uwah kekong", "泰雅")
+        self.assertNotIn("說話者標記", result.discuss)
+        self.assertEqual(
+            result.hint,
+            "詞素切割第 1 個詞的 `Yu:m-uwah` 有標點「:」，程式判斷要刪掉，"
+            "因為詞素切割不能有標點，應該寫是 `Yum-uwah`",
+        )
+
+    def test_沒有標點(self):
+        result = check_segment_punctuation("masa-maan i to", "阿美")
+        self.assertEqual(result.hint, "")
+        self.assertEqual(result.discuss, {})
+
+    def test_一段只記一筆_照常匯出(self):
+        entry = segment_entry("aji. uri. o brah", "Aji uri o brah", "太魯閣")
+        found = []
         for issue in entry.issues:
-            kinds.append(issue.kind)
-        self.assertIn(IssueKind.PUNCTUATION_DIFF, kinds)
-        self.assertNotIn(IssueKind.SOURCE_SEGMENT_MISMATCH, kinds)
+            if issue.kind is IssueKind.SEGMENT_PUNCTUATION:
+                found.append(issue)
+        self.assertEqual(len(found), 1)
+        self.assertIn("`aji.`", found[0].detail)
+        self.assertIn("`uri.`", found[0].detail)
         self.assertTrue(entry.is_clean())
 
-    def test_標點相同就不記(self):
-        corpus = parse("典型_srt式.txt")
-        entry = corpus.entries[1]
-        build_entry(entry)
+    def test_待討論的標記存在段上(self):
+        entry = segment_entry("la+ga kiya.ga", ethnic="泰雅")
+        self.assertEqual(entry.discuss, {"+": 1, "詞中間的 .": 1})
+
+    def test_純華語句不檢查(self):
+        entry = segment_entry("好，這個時候", ethnic="排灣")
         for issue in entry.issues:
-            self.assertIsNot(issue.kind, IssueKind.PUNCTUATION_DIFF)
+            self.assertIsNot(issue.kind, IssueKind.SEGMENT_PUNCTUATION)
 
 
 class TestReversedTimecode(unittest.TestCase):

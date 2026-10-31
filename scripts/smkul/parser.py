@@ -288,16 +288,31 @@ def bare_form(text):
 
     單引號(喉塞音)是音位，不能去掉——排灣語 ODS 1-3 規定詞素切割要
     跟著族語原句的寫法。大小寫不計(詞素切割常把專有名詞寫成大寫)。
+    阿美語的 ^ 是書寫系統的喉塞音字母，跟單引號一樣保留;長音 :、
+    泰雅語的 _ 是符號，不是字母，跟切割符號一樣去掉。
+    """
+    return bare_form_positions(text)[0]
+
+
+def bare_form_positions(text):
+    """跟 bare_form 一樣,另外回傳每個留下來的字在原字串的位置。
+
+    校對表標出「族語原句與詞素切割不符」不一樣的字母時要用。
     """
     out = []
-    for char in text.lower():
-        if "a" <= char <= "z":
-            out.append(char)
-        elif "一" <= char <= "鿿" or char.isdigit():
-            out.append(char)
-        elif char in "'\u2019\u2018":
+    positions = []
+    for index, char in enumerate(text):
+        lower = char.lower()[:1]
+        if "a" <= lower <= "z" or lower == "^":
+            out.append(lower)
+        elif "一" <= lower <= "鿿" or lower.isdigit():
+            out.append(lower)
+        elif lower in "'\u2019\u2018":
             out.append("'")
-    return "".join(out)
+        else:
+            continue
+        positions.append(index)
+    return "".join(out), positions
 
 
 # 族語原句與詞素切割不符的細分。差一個字母與差一整串,要處理的方式不一樣。
@@ -414,40 +429,26 @@ def _mismatch_kind(source, segmentation):
     return MISMATCH_MANY
 
 
-# 句讀。族語原句保留、詞素切割照慣例不留,這種差異不算錯,但要提出來討論。
-PUNCTUATION = ",.?!;:，。、？！；：「」\"“”()（）…"
-
-
-def _punctuation_of(text):
-    """把一行裡面的句讀照順序抽出來。"""
-    out = []
-    for char in text:
-        if char in PUNCTUATION:
-            out.append(char)
-    return "".join(out)
-
-
 @dataclasses.dataclass
 class SourceCheck:
     """族語原句與詞素切割逐字比對的結果。
 
     規格寫在 features/族語原句詞素切割比對.feature：
     passed 是通過與否，kind 是不通過的分類（通過時是 None），
-    detail 是差在哪裡的一句話，punctuation_differs 是標點有沒有差。
-    標點差異不影響 passed——那是另外記一筆的 warning。
+    detail 是差在哪裡的一句話。族語原句的標點不比，
+    詞素切割行的標點另外由 check_segment_punctuation 檢查。
     """
 
     passed: bool
     kind: object = None
     detail: str = ""
-    punctuation_differs: bool = False
 
 
 def compare_source(source, segmentation):
     """族語原句與詞素切割逐字比對，回傳 SourceCheck。
 
     這是 features/族語原句詞素切割比對.feature 的入口，assemble_entry 也用
-    同一支產生「族語原句與詞素切割不符」與「標點不同」兩種問題。
+    同一支產生「族語原句與詞素切割不符」。
     """
     通過 = _matches(source, segmentation)
     分類 = None
@@ -457,9 +458,142 @@ def compare_source(source, segmentation):
         passed=通過,
         kind=分類,
         detail=_mismatch_detail(source, segmentation),
-        punctuation_differs=(
-            _punctuation_of(source) != _punctuation_of(segmentation)),
     )
+
+
+# 詞素切割行一定可以有的符號:切割符號與單引號。
+SEGMENT_SYMBOLS = "-=<>~'"
+# 《原住民族語言書寫系統》(113 年修正)各語言明定的符號,依族別查。
+WRITING_SYMBOLS = {
+    "阿美": "^:",
+    "泰雅": "_",
+    "賽夏": ":",
+    "邵": ".",
+}
+# 程式推不出正確寫法的符號:括號裡可能是省略的音,也可能是補充說明。
+UNSURE_SYMBOLS = "()（）"
+# 先不算錯誤、列進報告待討論章的三種。
+DISCUSS_PLUS = "+"
+DISCUSS_DOT = "詞中間的 ."
+DISCUSS_SPEAKER = "說話者標記"
+# 獨立的說話者標記:整個詞是 1 到 3 個字母加冒號,例如 G:、Lj:。
+SPEAKER = re.compile(r"[A-Za-z]{1,3}[:：]")
+
+
+@dataclasses.dataclass
+class SegmentPunctuation:
+    """詞素切割行標點檢查的結果。
+
+    規格寫在 features/詞素切割標點.feature：
+    hint 是錯誤提示(沒有標點時是空字串),discuss 是待討論的符號
+    {名稱: 處數},positions 是有問題的詞是第幾個(從 0 數起)。
+    """
+
+    hint: str = ""
+    discuss: dict = dataclasses.field(default_factory=dict)
+    positions: list = dataclasses.field(default_factory=list)
+
+
+def _inside_word(word, index):
+    """這個位置的前後都緊接字母或數字,才算詞中間。"""
+    if index == 0 or index == len(word) - 1:
+        return False
+    return word[index - 1].isalnum() and word[index + 1].isalnum()
+
+
+def _unique(chars):
+    """照出現順序去掉重複的字元。"""
+    out = []
+    for char in chars:
+        if char not in out:
+            out.append(char)
+    return out
+
+
+def _quoted(chars):
+    """每個字元各用「」包起來,例如「?」「!」。"""
+    out = []
+    for char in _unique(chars):
+        out.append("「" + char + "」")
+    return "".join(out)
+
+
+def _word_problem(word, allowed, discuss):
+    """一個詞裡面算標點的字元。待討論的符號順便記進 discuss。"""
+    marks = []
+    for index, char in enumerate(word):
+        if char.isalnum() or char in SEGMENT_SYMBOLS or char in allowed:
+            continue
+        if char == "+":
+            discuss[DISCUSS_PLUS] = discuss.get(DISCUSS_PLUS, 0) + 1
+            continue
+        if char == "." and _inside_word(word, index):
+            discuss[DISCUSS_DOT] = discuss.get(DISCUSS_DOT, 0) + 1
+            continue
+        marks.append(char)
+    return marks
+
+
+def _has_letter(word):
+    for char in word:
+        if char.isalnum():
+            return True
+    return False
+
+
+def _without(words, position):
+    """整行拿掉第 position 個詞(從 0 數起)。"""
+    kept = []
+    for index, word in enumerate(words):
+        if index != position:
+            kept.append(word)
+    return " ".join(kept)
+
+
+def _sentence(words, position, marks):
+    """一個有問題的詞寫一句提示。"""
+    word = words[position]
+    where = "詞素切割第 " + str(position + 1) + " 個詞的 `" + word + "` 有"
+    unsure = []
+    for char in marks:
+        if char in UNSURE_SYMBOLS:
+            unsure.append(char)
+    if unsure:
+        return (where + "括號「" + "".join(_unique(unsure)) + "」，"
+                "程式無法判斷，請標注者確認")
+    if not _has_letter(word):
+        return (where + "符號" + _quoted(marks) + "，程式判斷要整個詞刪掉，"
+                "因為詞素切割不能有標點，應該寫是 `" +
+                _without(words, position) + "`")
+    fixed = []
+    for char in word:
+        if char not in marks:
+            fixed.append(char)
+    return (where + "標點" + _quoted(marks) + "，程式判斷要刪掉，"
+            "因為詞素切割不能有標點，應該寫是 `" + "".join(fixed) + "`")
+
+
+def check_segment_punctuation(segmentation, ethnic=""):
+    """檢查詞素切割行有沒有標點,回傳 SegmentPunctuation。
+
+    這是 features/詞素切割標點.feature 的入口,build_entry 也用同一支
+    產生「詞素切割有標點」。ethnic 用來查書寫系統的符號。
+    """
+    allowed = WRITING_SYMBOLS.get(ethnic, "")
+    words = segmentation.split()
+    discuss = {}
+    sentences = []
+    positions = []
+    for position, word in enumerate(words):
+        if SPEAKER.fullmatch(word):
+            discuss[DISCUSS_SPEAKER] = discuss.get(DISCUSS_SPEAKER, 0) + 1
+            continue
+        marks = _word_problem(word, allowed, discuss)
+        if marks:
+            sentences.append(_sentence(words, position, marks))
+            positions.append(position)
+    return SegmentPunctuation(
+        hint="；".join(sentences), discuss=discuss, positions=positions)
 
 
 # 詞素切割的字數比族語原句多這麼多,就不是換行,而是同一句標了兩版。
@@ -529,14 +663,6 @@ def assemble_entry(entry, log=None):
     entry.gloss = " ".join(glosses)
     entry.translation = collapse_spaces(body[-1])
     比對 = compare_source(entry.source, entry.segmentation)
-    if 比對.punctuation_differs:
-        entry.issues.append(
-            Issue(
-                IssueKind.PUNCTUATION_DIFF, entry.path, entry.number,
-                "族語原句與詞素切割的標點不同(不擋匯出)",
-                [("族語原句", entry.source), ("詞素切割", entry.segmentation)],
-            )
-        )
     if not 比對.passed:
         entry.issues.append(
             Issue(
@@ -661,8 +787,11 @@ def _wide_line(body):
     return body[0]
 
 
-def build_entry(entry, log=None):
-    """組四行;組不起來就分類異常。回傳組不組得起來。"""
+def build_entry(entry, log=None, ethnic=""):
+    """組四行;組不起來就分類異常。回傳組不組得起來。
+
+    ethnic 是族別,檢查詞素切割行標點時查書寫系統的符號用。
+    """
     if assemble_entry(entry, log):
         # 排版分析(組四行)和內容判斷是兩步。整段都是華語的也組得
         # 起來,但不能匯出,所以組好之後再記一筆「純華語句」。
@@ -674,6 +803,8 @@ def build_entry(entry, log=None):
                     [("內文", " ⏎ ".join(entry.body))],
                 )
             )
+        else:
+            _note_segment_punctuation(entry, ethnic)
         return True
     for issue in entry.issues:
         if issue.kind is IssueKind.DUPLICATE_ANNOTATION:
@@ -692,6 +823,20 @@ def build_entry(entry, log=None):
     return False
 
 
+def _note_segment_punctuation(entry, ethnic):
+    """詞素切割行有標點就記一筆,待討論的符號存在段上。純華語句不檢查。"""
+    結果 = check_segment_punctuation(entry.segmentation, ethnic)
+    entry.discuss = 結果.discuss
+    if 結果.hint:
+        entry.issues.append(
+            Issue(
+                IssueKind.SEGMENT_PUNCTUATION, entry.path, entry.number,
+                結果.hint,
+                [("詞素切割", entry.segmentation)],
+            )
+        )
+
+
 def parse_corpus_file(path, rel_path, ethnic="", variant="", log=None):
     """讀一個 docx，轉成 CorpusFile(已經組四行、已經分類)。
 
@@ -704,5 +849,5 @@ def parse_corpus_file(path, rel_path, ethnic="", variant="", log=None):
         variant=variant, log=log,
     )
     for entry in corpus.entries:
-        build_entry(entry, log)
+        build_entry(entry, log, ethnic)
     return corpus

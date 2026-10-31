@@ -42,7 +42,8 @@ def collect_comments(pairs):
 
 
 def overview(pairs, issues, comments):
-    errors, warnings, notices = report.severity_split(issues)
+    errors, exported, warnings, notices = report.severity_split(
+        issues)
     lines = [report.heading("總覽")]
     lines.append("")
     lines.append("- 成對的檔案:" + str(len(pairs)) + " 對")
@@ -198,7 +199,8 @@ def run(base):
         todo_section(issues, comments),
     ]
     path = report.write("docx_txt_report.md", sections)
-    errors, warnings, notices = report.severity_split(issues)
+    errors, exported, warnings, notices = report.severity_split(
+        issues)
     return path, len(errors)
 
 

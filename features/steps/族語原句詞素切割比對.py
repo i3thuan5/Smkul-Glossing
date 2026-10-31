@@ -39,6 +39,8 @@ def step_差異(context, detail):
         "\n預期:" + detail + "\n實際:" + context.check.detail)
 
 
-@then("另外記一筆標點不同")
-def step_標點不同(context):
-    assert context.check.punctuation_differs, "這段的標點其實一樣"
+@then("不記任何問題")
+def step_不記問題(context):
+    assert context.check.passed, "這段其實比對不符:" + context.segmentation
+    assert not hasattr(context.check, "punctuation_differs"), (
+        "比對結果不應該再有標點差異的欄位")
