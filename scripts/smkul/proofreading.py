@@ -12,8 +12,8 @@ import re
 from collections import OrderedDict, namedtuple
 
 from scripts.smkul import report, xlsx
-from scripts.smkul.entry import IssueKind
-from scripts.smkul.pairing import split_kind
+from scripts.smkul.entry import IssueKind, Severity
+from scripts.smkul.languages import split_kind
 from scripts.smkul.parser import bare_form_positions, check_segment_punctuation
 
 ID_PREFIX = "ISSUE-"
@@ -183,6 +183,10 @@ def apply_judgements(issues, judgements):
     return confirmed, discussed
 
 
+# 要請老師校對的嚴重度:錯誤兩級要請人修。警告、現象不列入校對表。
+# 規格見 features/分析報告.feature「嚴重度決定翻譯訓練YAML、報告舉例、請老師校對」。
+PROOFREAD_SEVERITIES = (Severity.ERROR, Severity.EXPORTED_ERROR)
+
 # 校對表的一列:族別、語言別、問題,以及問題所在的段(檔案層的問題是 None)。
 SheetRow = namedtuple("SheetRow", ["ethnic", "variant", "issue", "entry"])
 MAIN_SHEET = "校對"
@@ -301,7 +305,7 @@ def write_sheets(folder, rows, judgements):
     """產生校對表,一個語言別一個 xlsx,回傳寫出去的路徑。
 
     rows 要包含所有問題,也包含老師確認過是程式判斷錯的問題(判斷欄
-    保留老師填的,老師才看得到)。讀回來的判斷對不到這次任何問題的,
+    保留老師填的,老師才看得到)。只有 PROOFREAD_SEVERITIES 的問題會寫進去。讀回來的判斷對不到這次任何問題的,
     寫進同一個語言別的「已不存在的紀錄」分頁。
     """
     os.makedirs(folder, exist_ok=True)
@@ -309,6 +313,8 @@ def write_sheets(folder, rows, judgements):
     groups = OrderedDict()
     current = set()
     for row in rows:
+        if row.issue.severity not in PROOFREAD_SEVERITIES:
+            continue
         groups.setdefault((row.ethnic, row.variant), []).append(row)
         current.add(row.issue.id)
     gone = OrderedDict()

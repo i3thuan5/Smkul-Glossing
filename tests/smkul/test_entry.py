@@ -45,6 +45,13 @@ class TestIssue(unittest.TestCase):
         self.assertIs(issue.severity, Severity.NOTICE)
         self.assertFalse(issue.is_error())
 
+    def test_空段與孤兒時間碼_是現象(self):
+        # 規格見 features/分析報告.feature「每一種問題的嚴重度」。
+        for kind in (IssueKind.EMPTY_ENTRY, IssueKind.ORPHAN_TIMECODE):
+            issue = Issue(kind, "a.txt", "1")
+            self.assertIs(issue.severity, Severity.NOTICE, kind.value)
+            self.assertFalse(issue.is_error())
+
     def test_詞素切割有標點_是錯誤照常匯出(self):
         issue = Issue(IssueKind.SEGMENT_PUNCTUATION, "a.txt", "12")
         self.assertIs(issue.severity, Severity.EXPORTED_ERROR)
@@ -64,16 +71,16 @@ class TestIssue(unittest.TestCase):
 
 
 class TestKindNames(unittest.TestCase):
-    """分類名照 meeting-terms-yaml design 決策 1。"""
+    """分類名照 meeting-terms-yaml design 決策 1;三類改名照 report-trim design 決策 8。"""
 
     def test_對應的五類與_feature_的_scenario_一字不差(self):
         text = read_feature("詞素切割與詞素翻譯對應")
         expect = {
-            IssueKind.GLOSS_FEWER: "詞素翻譯的詞比詞素切割少",
-            IssueKind.GLOSS_MORE: "詞素翻譯的詞比詞素切割多",
+            IssueKind.GLOSS_FEWER: "詞素切割的詞比詞素翻譯多",
+            IssueKind.GLOSS_MORE: "詞素切割的詞比詞素翻譯少",
             IssueKind.GLOSS_CUT_MORE: "詞素切割沒有切，詞素翻譯有切",
             IssueKind.GLOSS_CUT_FEWER: "詞素切割有切，詞素翻譯沒有切",
-            IssueKind.SYMBOL_KIND_DIFF: "符號的種類不一樣",
+            IssueKind.SYMBOL_KIND_DIFF: "詞素切割和詞素翻譯的符號不一樣",
         }
         for kind, name in expect.items():
             self.assertEqual(kind.value, name)
@@ -85,7 +92,11 @@ class TestKindNames(unittest.TestCase):
         self.assertEqual(IssueKind.EMPTY_ENTRY.value, "空段")
         self.assertEqual(
             IssueKind.SOURCE_SEGMENT_MISMATCH.value, "族語原句與詞素切割不符")
-        self.assertEqual(IssueKind.ENTRY_COUNT_MISMATCH.value, "段數不同")
+        # 「段數不同」是 docx／txt 比對的分類，隨 docx-txt-consistency 刪掉。
+        names = []
+        for kind in IssueKind:
+            names.append(kind.value)
+        self.assertNotIn("段數不同", names)
 
     def test_自動處理指向的_scenario_都找得到(self):
         for kind, (feature, scenario) in NORM_FEATURE.items():

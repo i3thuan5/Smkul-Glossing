@@ -35,45 +35,39 @@ class IssueKind(enum.Enum):
     SEGMENT_PUNCTUATION = "詞素切割有標點"
     # 詞素切割行與詞素翻譯行的對應。這五類的值與
     # features/詞素切割與詞素翻譯對應.feature 的 Scenario 名一樣。
-    GLOSS_FEWER = "詞素翻譯的詞比詞素切割少"
-    GLOSS_MORE = "詞素翻譯的詞比詞素切割多"
+    GLOSS_FEWER = "詞素切割的詞比詞素翻譯多"
+    GLOSS_MORE = "詞素切割的詞比詞素翻譯少"
     GLOSS_CUT_MORE = "詞素切割沒有切，詞素翻譯有切"
     GLOSS_CUT_FEWER = "詞素切割有切，詞素翻譯沒有切"
-    SYMBOL_KIND_DIFF = "符號的種類不一樣"
-    # docx / txt 一致性
-    MISSING_FILE = "缺檔"
-    FILENAME_MISMATCH = "檔名不一致"
-    ENTRY_COUNT_MISMATCH = "段數不同"
-    CONTENT_DIFF = "內容差異"
+    SYMBOL_KIND_DIFF = "詞素切割和詞素翻譯的符號不一樣"
     # warning
     MIXED_TIMECODE_FORMAT = "時間碼格式混用"
     UNKNOWN_TIMECODE_UNIT = "時間碼單位不明"
 
 
+# 每一種問題的嚴重度。順序就是報告總覽問題表與第 7 章的順序,
+# 跟 features/分析報告.feature「每一種問題的嚴重度」那張表一樣(step 會檢查)。
 SEVERITY = {
     IssueKind.GLUED_LINE: Severity.ERROR,
     IssueKind.MISSING_GLOSS_LINE: Severity.ERROR,
     IssueKind.MISSING_TRANSLATION: Severity.ERROR,
-    IssueKind.EMPTY_ENTRY: Severity.ERROR,
-    IssueKind.ORPHAN_TIMECODE: Severity.ERROR,
-    # 時間碼顛倒是資料錯,但標注本身沒有問題,所以照常匯出。
-    IssueKind.REVERSED_TIMECODE: Severity.WARNING,
     IssueKind.STRAY_LINE: Severity.ERROR,
-    IssueKind.CHINESE_ONLY: Severity.NOTICE,
     IssueKind.DUPLICATE_ANNOTATION: Severity.ERROR,
-    IssueKind.SOURCE_SEGMENT_MISMATCH: Severity.ERROR,
-    IssueKind.GLOSS_FEWER: Severity.ERROR,
-    IssueKind.GLOSS_MORE: Severity.ERROR,
     IssueKind.GLOSS_CUT_MORE: Severity.ERROR,
     IssueKind.GLOSS_CUT_FEWER: Severity.ERROR,
     IssueKind.SYMBOL_KIND_DIFF: Severity.ERROR,
-    IssueKind.MISSING_FILE: Severity.ERROR,
-    IssueKind.FILENAME_MISMATCH: Severity.ERROR,
-    IssueKind.ENTRY_COUNT_MISMATCH: Severity.ERROR,
-    IssueKind.CONTENT_DIFF: Severity.ERROR,
+    IssueKind.GLOSS_FEWER: Severity.ERROR,
+    IssueKind.GLOSS_MORE: Severity.ERROR,
+    # 細分成 parser.MISMATCH_WHY 的 6 個小類,小類的順序在那裡。
+    IssueKind.SOURCE_SEGMENT_MISMATCH: Severity.ERROR,
     IssueKind.SEGMENT_PUNCTUATION: Severity.EXPORTED_ERROR,
+    # 時間碼顛倒是資料錯,但標注本身沒有問題,所以照常匯出。
+    IssueKind.REVERSED_TIMECODE: Severity.WARNING,
     IssueKind.MIXED_TIMECODE_FORMAT: Severity.WARNING,
     IssueKind.UNKNOWN_TIMECODE_UNIT: Severity.WARNING,
+    IssueKind.EMPTY_ENTRY: Severity.NOTICE,
+    IssueKind.ORPHAN_TIMECODE: Severity.NOTICE,
+    IssueKind.CHINESE_ONLY: Severity.NOTICE,
 }
 
 
@@ -136,9 +130,9 @@ KIND_WHY = {
         "`:`，泰雅語的 `_` 等）以外的字元都算。這是錯誤，但照常匯出；"
         "每段的提示寫出第幾個詞、應該怎麼改。",
     IssueKind.GLOSS_FEWER:
-        "詞素翻譯行的詞比詞素切割行少，兩行沒辦法一個詞對一個詞。",
+        "詞素切割行的詞比詞素翻譯行多，兩行沒辦法一個詞對一個詞。",
     IssueKind.GLOSS_MORE:
-        "詞素翻譯行的詞比詞素切割行多，兩行沒辦法一個詞對一個詞。",
+        "詞素切割行的詞比詞素翻譯行少，兩行沒辦法一個詞對一個詞。",
     IssueKind.GLOSS_CUT_MORE:
         "某一個詞在詞素切割行沒有切，詞素翻譯行卻切了。詞素切割行少了 "
         "`-`、`=`、`<>`、`~` 其中一個。",
@@ -148,11 +142,6 @@ KIND_WHY = {
     IssueKind.SYMBOL_KIND_DIFF:
         "某一個詞兩邊的切割符號個數一樣，種類或順序不一樣，"
         "例如詞素切割寫 `-=`、詞素翻譯寫 `==`。",
-    IssueKind.MISSING_FILE: "docx 與 txt 只有一邊存在。",
-    IssueKind.FILENAME_MISMATCH:
-        "docx 與 txt 的檔名不完全相同，沒辦法自動配對。",
-    IssueKind.ENTRY_COUNT_MISMATCH: "docx 與 txt 的段數不一樣。",
-    IssueKind.CONTENT_DIFF: "docx 與 txt 同一段的內容不一樣。",
     IssueKind.MIXED_TIMECODE_FORMAT:
         "同一個檔案裡用了兩種以上的時間碼格式。程式照樣解析，"
         "不算錯誤。",

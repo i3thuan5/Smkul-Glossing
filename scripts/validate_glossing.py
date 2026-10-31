@@ -17,8 +17,7 @@ from collections import OrderedDict, namedtuple
 
 from scripts.smkul import proofreading, report, yamlout
 from scripts.smkul.entry import KIND_WHY, IssueKind, NormLog
-from scripts.smkul.markers import ODS_PATH, load_marker_lists
-from scripts.smkul.pairing import split_kind
+from scripts.smkul.languages import split_kind
 from scripts.smkul.parser import (DISCUSS_DOT, DISCUSS_PLUS,
                                   DISCUSS_SPEAKER, MISMATCH_WHY)
 from scripts.smkul.parser import parse_corpus_file
@@ -49,9 +48,8 @@ COMPARE_NOTE = (
 )
 
 
-# 校對相關的材料:校對表的每一列(含老師確認過的問題)、確認過的
-# (Issue, Judgement)、要討論的 (Issue, Judgement)。
-Proof = namedtuple("Proof", ["rows", "confirmed", "discussed"])
+# 校對相關的材料:校對表的每一列(含老師確認過是程式判斷錯的問題)。
+Proof = namedtuple("Proof", ["rows"])
 
 
 def collect(base, log, judgements=None):
@@ -65,7 +63,7 @@ def collect(base, log, judgements=None):
     files = []
     issues = []
     mismatch = OrderedDict()
-    proof = Proof([], [], [])
+    proof = Proof([])
     book = proofreading.IdBook()
     for root, dirs, names in os.walk(base):
         for name in sorted(names):
@@ -115,11 +113,9 @@ class Judge:
         for issue in found:
             self.issues.append(issue)
             self.proof.rows.append(self._row(issue, entry))
-        for pair in confirmed:
-            self.proof.confirmed.append(pair)
-            self.proof.rows.append(self._row(pair[0], entry))
-        for pair in discussed:
-            self.proof.discussed.append(pair)
+        # 老師確認過是程式判斷錯的問題不算問題,但仍留在校對表。
+        for issue, judgement in confirmed:
+            self.proof.rows.append(self._row(issue, entry))
 
     def _row(self, issue, entry):
         return proofreading.SheetRow(
@@ -151,21 +147,9 @@ VARIANT_HEADERS = ["族別", "語言別", "檔數", "段數", "通過", "有問�
 
 
 def kinds_section(issues):
-    """每一種問題的說明與例子，順序照總覽表(筆數多的排前面)。"""
-    counter = report.count_kinds(issues)
-    order = []
-    for label, _ in counter.most_common():
-        order.append(label)
-    # 「族語原句與詞素切割不符」的幾個細分排在一起,才好對照。
-    grouped = []
-    for label in order:
-        if not label.startswith(MISMATCH_PREFIX):
-            grouped.append(label)
-    for kind in MISMATCH_WHY:
-        label = MISMATCH_PREFIX + kind
-        if label in order:
-            grouped.append(label)
-    return report.kind_section("問題類型說明與例子", issues, why_of, grouped)
+    """每一種問題的說明與例子，順序跟總覽的問題表一樣。"""
+    return report.kind_section(
+        "問題類型說明與例子", issues, why_of, report.ordered_labels(issues))
 
 
 def entry_total(files):
@@ -187,17 +171,35 @@ def overview(files, issues, exported_files, exported_segments):
     else:
         rate = 0.0
     lines.append(
-        "- 通過驗證、已匯出 YAML:" + str(exported_segments) +
+        "- 通過驗證、已匯出翻譯訓練YAML:" + str(exported_segments) +
         " 段(" + ("%.1f" % rate) + "%)，分布在 " +
         str(exported_files) + " 個檔案"
     )
     lines.append("- 錯誤（不匯出）:" + str(len(errors)) + " 筆")
     lines.append("- 錯誤（照常匯出）:" + str(len(exported)) + " 筆")
     lines.append("- 警告（照常匯出）:" + str(len(warnings)) + " 筆")
-    lines.append("- 現象(不算錯誤、也不匯出):" + str(len(notices)) + " 筆")
+    lines.append("- 現象:" + str(len(notices)) + " 筆")
+    lines.append("")
+    lines.append(SEVERITY_NOTE)
+    lines.append("")
+    lines.append(report.table(SEVERITY_HEADERS, SEVERITY_ROWS))
     lines.append("")
     lines.append(report.kind_table(issues))
     return "\n".join(lines)
+
+
+# 嚴重度決定三種產出。正本是 features/分析報告.feature,step 會檢查這張表。
+SEVERITY_NOTE = (
+    "嚴重度決定一段語料會不會匯出翻譯訓練YAML、報告會不會舉例、"
+    "要不要請族語老師在校對表校對："
+)
+SEVERITY_HEADERS = ["嚴重度", "翻譯訓練YAML", "報告舉例", "請老師校對"]
+SEVERITY_ROWS = [
+    ("錯誤", "不匯出", "舉例", "要"),
+    ("錯誤（照常匯出）", "匯出", "舉例", "要"),
+    ("警告（照常匯出）", "匯出", "舉例", "不要"),
+    ("現象", "不匯出", "舉例", "不要"),
+]
 
 
 def variant_rows(files):
@@ -220,118 +222,6 @@ def variant_rows(files):
             rate = "-"
         out.append((ethnic, variant, files_n, total, good, bad, rate))
     return out
-
-
-def todo_section(issues, total_entries=0):
-    """討論事項。逐項先寫「說明」(事實)，才寫「討論」(欲問對方ê)。"""
-    lines = [report.heading("討論"), ""]
-    counter = report.count_kinds(issues)
-
-    lines.append(report.heading("需要修正的標注", 3))
-    lines.append("")
-    lines.append("說明:")
-    lines.append("")
-    lines.append(
-        "每一項的意思與例子請看「問題類型說明與例子」那一章。"
-        "「族語原句與詞素切割不符」照差異大小分開列，才好判斷先修哪一類。"
-    )
-    lines.append("")
-    order = []
-    for kind in MISMATCH_WHY:
-        order.append(MISMATCH_PREFIX + kind)
-    for kind in (IssueKind.SEGMENT_PUNCTUATION,
-                 IssueKind.GLOSS_FEWER, IssueKind.GLOSS_MORE,
-                 IssueKind.GLOSS_CUT_MORE, IssueKind.GLOSS_CUT_FEWER,
-                 IssueKind.SYMBOL_KIND_DIFF, IssueKind.GLUED_LINE,
-                 IssueKind.MISSING_TRANSLATION, IssueKind.ORPHAN_TIMECODE,
-                 IssueKind.REVERSED_TIMECODE, IssueKind.EMPTY_ENTRY,
-                 IssueKind.DUPLICATE_ANNOTATION, IssueKind.STRAY_LINE,
-                 IssueKind.MISSING_GLOSS_LINE):
-        order.append(kind.value)
-    rows = []
-    for label in order:
-        count = counter.get(label, 0)
-        if not count:
-            continue
-        rows.append((label, count, why_of(label)))
-    lines.append(report.table(["項目", "筆數", "說明"], rows))
-    lines.append("")
-    lines.append("討論:")
-    lines.append("")
-    lines.append(
-        "除了「詞素切割有標點」與「結束時間早於開始」以外，這些段目前都"
-        "不匯出 YAML(這兩類是資料錯，但標注還用得上，所以照常匯出)。"
-        "要先修哪一類?「族語原句與詞素切割不符」細分之後，哪幾類是真的要改、"
-        "哪幾類其實是可以接受的拼寫慣例?"
-    )
-
-    lines.append("")
-    lines.append(report.heading("純華語句要怎麼處理", 3))
-    lines.append("")
-    lines.append("說明:")
-    lines.append("")
-    lines.append(
-        "受訪者講華語的句子有 " + str(counter.get("純華語句", 0)) +
-        " 段，而且有三種表法:只有 1 行、族語原句+華語翻譯 2 行、"
-        "4 行全是同一句華語。"
-        "目前一律不匯出。"
-    )
-    lines.append("")
-    lines.append("討論:")
-    lines.append("")
-    lines.append("要統一成哪一種表法?還是這些句子本來就不需要收進語料?")
-
-    lines.append("")
-    lines.append(report.heading("有沒有原始的影片或音檔", 3))
-    lines.append("")
-    lines.append("說明:")
-    lines.append("")
-    lines.append(
-        "每一段都帶著時間碼(共 " + str(total_entries) + " 段)，"
-        "表示標注時有原始的錄影或錄音。我們手上只有 docx 與 txt，"
-        "沒有拿到影音檔。有幾件事非得對照原始檔案才判斷得了:"
-    )
-    lines.append("")
-    lines.append(
-        "1. ODS 排灣語 1-3 明文寫著:第一行沒寫 `[k]` 或 `[']` 的時候"
-        "「要聽音檔」才知道要補哪一個。「族語原句與詞素切割不符-只差單引號」"
-        "那 189 段就是這一類。"
-    )
-    lines.append(
-        "2. 拉長音(`==`、`:`)、聽不清(`...`)、笑聲(`＠`)、咳嗽這些標記"
-        "都是聽出來的，沒有音檔就沒辦法覆核。"
-    )
-    lines.append(
-        "3. 魯凱霧台那兩個檔案的時間碼單位不明，對照音檔長度就能確認。"
-    )
-    lines.append(
-        "4. 「孤兒時間碼」與「空段」那幾段的內容可能遺失，"
-        "有音檔就補得回來。"
-    )
-    lines.append("")
-    lines.append("討論:")
-    lines.append("")
-    lines.append(
-        "有原始的影片或音檔嗎?可以一起提供嗎?"
-        "如果不能提供，上面這幾類就只能靠對方那邊處理。"
-    )
-
-    lines.append("")
-    lines.append(report.heading("魯凱霧台的時間碼單位", 3))
-    lines.append("")
-    lines.append("說明:")
-    lines.append("")
-    lines.append(
-        "魯凱霧台 1、2 的時間碼是 `00:00:00-00:04:21`，沒有毫秒，"
-        "單位不明(可能是 時:分:秒，也可能是 分:秒:frame)。"
-        "程式一律保留原字串不換算。"
-    )
-    lines.append("")
-    lines.append("討論:")
-    lines.append("")
-    lines.append("這個格式的單位是什麼?")
-
-    return "\n".join(lines)
 
 
 DISCUSS_INTRO = (
@@ -374,8 +264,11 @@ def discuss_chapter(files):
         "待討論：詞素切割的特殊符號", DISCUSS_INTRO, parts)
 
 
-def proofreading_section():
-    """校對流程:給業務單位看校對表在哪裡、怎麼填、怎麼交回。"""
+def proofreading_section(problems):
+    """校對流程:給業務單位看校對表在哪裡、怎麼填、怎麼交回。
+
+    problems 是讀回校對表時遇到的問題,列在最後;沒有就不寫。
+    """
     lines = [report.heading("校對流程"), ""]
     lines.append(
         "每次產生報告，程式也會在 `" + SHEET_DIR.replace(os.sep, "/") +
@@ -385,7 +278,8 @@ def proofreading_section():
         "（例如 `ISSUE-3f9a2c1b`），對得到校對表的同一列。")
     lines.append("")
     lines.append(
-        "校對表一筆問題一列，列出問題、程式的提示與四行語料，程式認為有"
+        "校對表只列需要老師校對的問題（嚴重度是「錯誤」與「錯誤（照常匯出）」），"
+        "一筆問題一列，列出問題、程式的提示與四行語料，程式認為有"
         "問題的地方標成紅色粗體。請族語老師在「判斷」欄的下拉選單選一個:")
     lines.append("")
     lines.append(
@@ -393,11 +287,11 @@ def proofreading_section():
         "docx 改好之後重跑，這一筆就不會再出現。")
     lines.append(
         "2. **" + proofreading.PROGRAM_WRONG + "**:docx 的寫法是對的。"
-        "重跑之後這一筆不再算問題，移到報告最後一章「老師確認過、不是錯誤」；"
-        "一段如果只剩這種問題，就照常匯出 YAML。")
+        "重跑之後這一筆不再算問題，報告不再舉例，校對表那一列保留老師的判斷；"
+        "一段如果只剩這種問題，就照常匯出翻譯訓練YAML。")
     lines.append(
         "3. **" + proofreading.DISCUSS + "**:不確定，留到下次開會。"
-        "這一筆照常算問題，另外列在「老師標要討論的項目」那一章。")
+        "這一筆照常算問題，判斷與備註留在校對表。")
     lines.append("")
     lines.append(
         "「備註」欄可以寫理由。填好的校對表請交回，放進 `" +
@@ -405,57 +299,44 @@ def proofreading_section():
         "重跑時程式會把老師的判斷與備註帶進新的校對表；docx 那一段改過"
         "的話，舊的判斷會失效、重新檢查，原本的判斷與備註移到「已不存在的"
         "紀錄」分頁，不會不見。")
+    if problems:
+        lines.append("")
+        lines.append("讀回校對表時的提醒:")
+        lines.append("")
+        for problem in problems:
+            lines.append("- " + problem)
     return "\n".join(lines)
 
 
-def proof_chapters(proof, problems):
-    """報告最後兩章:老師標要討論的項目、老師確認過、不是錯誤。"""
-    discussed = []
-    for issue, found in proof.discussed:
-        discussed.append((issue, found.note))
-    confirmed = []
-    for issue, found in proof.confirmed:
-        confirmed.append((issue, found.note))
-    return [
-        report.teacher_discuss_section("老師標要討論的項目", discussed),
-        report.confirmed_section(
-            "老師確認過、不是錯誤", confirmed, problems),
-    ]
-
-
-def run(base, ods_path=ODS_PATH, proof_dir=PROOF_DIR, sheet_dir=SHEET_DIR):
+def run(base, proof_dir=PROOF_DIR, out_dir=report.OUT_DIR):
+    """產生翻譯訓練YAML、報告與校對表,全部寫進 out_dir。"""
+    sheet_dir = os.path.join(out_dir, "校對表")
     log = NormLog()
-    marker_lists = load_marker_lists(ods_path)
     readback = proofreading.read_judgements(proof_dir)
     files, issues, mismatch, proof = collect(
         base, log, readback.judgements)
-    yaml_path, yaml_files, yaml_segments = yamlout.write(files)
+    yaml_path, yaml_files, yaml_segments = yamlout.write(
+        files, out_dir=out_dir)
     proofreading.write_sheets(sheet_dir, proof.rows, readback.judgements)
 
     sections = [
         "# Glossing 驗證報告",
-        "更新日期:" + report.today() + "\n\n標記清單:`" +
-        os.path.basename(ods_path) + "`",
+        "更新日期:" + report.today(),
         overview(files, issues, yaml_files, yaml_segments),
         report.variant_section(
             variant_rows(files),
             VARIANT_HEADERS,
         ),
-        report.heading("YAML 輸出") + "\n\n" +
-        "通過驗證的段匯出到 `" + yaml_path + "`，共 " +
+        report.heading("翻譯訓練YAML 輸出") + "\n\n" +
+        "通過驗證的段匯出到翻譯訓練YAML `" + yaml_path + "`，共 " +
         str(yaml_segments) + " 段。\n\n" + report.YAML_SOURCE_WHY,
-        proofreading_section(),
-        report.format_section(files, marker_lists.keys()),
+        proofreading_section(readback.problems),
+        report.format_section(files),
         report.norm_section(log, COMPARE_NOTE),
         kinds_section(issues),
-        report.detail_section("問題明細", issues),
         discuss_chapter(files),
-        todo_section(issues, entry_total(files)),
     ]
-    # 「老師確認過、不是錯誤」一定是最後一章。
-    for chapter in proof_chapters(proof, readback.problems):
-        sections.append(chapter)
-    path = report.write("glossing_report.md", sections)
+    path = report.write("glossing_report.md", sections, out_dir)
     errors, exported, warnings, notices = report.severity_split(issues)
     return path, yaml_path, len(errors)
 
@@ -463,10 +344,8 @@ def run(base, ods_path=ODS_PATH, proof_dir=PROOF_DIR, sheet_dir=SHEET_DIR):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="驗證標注規則")
     parser.add_argument("base", nargs="?", default=BASE, help="語料目錄")
-    parser.add_argument(
-        "--ods", default=ODS_PATH, help="構詞標記清單 ODS")
     args = parser.parse_args(argv)
-    path, yaml_path, errors = run(args.base, args.ods)
+    path, yaml_path, errors = run(args.base)
     print("報告:" + path)
     print("YAML:" + yaml_path)
     print("錯誤:" + str(errors) + " 筆")

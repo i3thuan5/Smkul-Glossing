@@ -6,7 +6,6 @@ import unittest
 from tests import DATA
 
 from scripts.smkul.docx2text import (
-    docx_comments,
     docx_paragraphs,
     docx_text,
 )
@@ -60,35 +59,22 @@ class TestDocxIntoParser(unittest.TestCase):
         self.assertTrue(second.is_clean())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 WITH_COMMENTS = os.path.join(DATA, "有註解.docx")
 
 
-class TestDocxComments(unittest.TestCase):
-    """docx 有審閱註解,txt 只留 [a] 這種錨點,註解本身不見了。"""
+class TestNoComments(unittest.TestCase):
+    """docx 的審閱註解不會混進內文(corpus-parsing「語料來源為 docx」)。
 
-    def test_沒有註解的檔案回傳空的(self):
-        self.assertEqual(docx_comments(SMALL), [])
+    審閱註解抽取(docx_comments)隨 docx／txt 一致性檢查一起刪掉
+    (docx-txt-consistency 全部 REMOVED,2026.09 會議案由二忽略註解)。
+    """
 
-    def test_照文件順序配字母(self):
-        found = docx_comments(WITH_COMMENTS)
-        self.assertEqual(len(found), 2)
-        self.assertEqual(found[0]["字母"], "a")
-        self.assertEqual(found[0]["內容"], "主焦.來")
-        self.assertEqual(found[0]["作者"], "Megan G")
-        self.assertEqual(found[0]["日期"], "2026-04-08")
-        self.assertEqual(found[1]["字母"], "b")
-        self.assertEqual(found[1]["內容"], "加 完成貌")
+    def test_內文沒有註解本文(self):
+        text = docx_text(WITH_COMMENTS)
+        self.assertNotIn("加 完成貌", text)
+        self.assertNotIn("Megan G", text)
+        self.assertIn("qadjaw ka liaw nia=aya", text)
 
-    def test_錨點字母對得上註解(self):
-        found = docx_comments(WITH_COMMENTS)
-        letters = []
-        for item in found:
-            letters.append("[" + item["字母"] + "]")
-        with open(os.path.join(DATA, "有錨點.txt"), encoding="utf-8") as f:
-            text = f.read()
-        for letter in letters:
-            self.assertIn(letter, text)
+
+if __name__ == "__main__":
+    unittest.main()

@@ -270,37 +270,37 @@ class TestSegmentPunctuation(unittest.TestCase):
     def test_詞尾標點_刪掉(self):
         self.assertEqual(
             self.hint("iq kiya.", "太魯閣"),
-            "詞素切割第 2 個詞的 `kiya.` 有標點「.」，程式判斷要刪掉，"
+            "詞素切割第 2 個詞的 `kiya.` 有標點 `.`，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `kiya`",
         )
 
     def test_一個詞好幾種標點_依出現順序列(self):
         self.assertEqual(
             self.hint("azua?!", "排灣"),
-            "詞素切割第 1 個詞的 `azua?!` 有標點「?」「!」，程式判斷要刪掉，"
+            "詞素切割第 1 個詞的 `azua?!` 有標點 `?`、`!`，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `azua`",
         )
 
     def test_只有符號的詞_整個詞刪掉_寫整行(self):
         self.assertEqual(
             self.hint("pa-'a-pazangal ＠", "排灣"),
-            "詞素切割第 2 個詞的 `＠` 有符號「＠」，程式判斷要整個詞刪掉，"
+            "詞素切割第 2 個詞的 `＠` 有符號 `＠`，程式判斷要整個詞刪掉，"
             "因為詞素切割不能有標點，應該寫是 `pa-'a-pazangal`",
         )
 
     def test_括號_程式無法判斷(self):
         self.assertEqual(
             self.hint("nu a(ne)ma.aya-a(ne)ma.aya='en", "排灣"),
-            "詞素切割第 2 個詞的 `a(ne)ma.aya-a(ne)ma.aya='en` 有括號「()」，"
+            "詞素切割第 2 個詞的 `a(ne)ma.aya-a(ne)ma.aya='en` 有括號 `()`，"
             "程式無法判斷，請標注者確認",
         )
 
     def test_好幾個詞_用分號接起來(self):
         self.assertEqual(
             self.hint("aji. uri. o brah", "太魯閣"),
-            "詞素切割第 1 個詞的 `aji.` 有標點「.」，程式判斷要刪掉，"
+            "詞素切割第 1 個詞的 `aji.` 有標點 `.`，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `aji`；"
-            "詞素切割第 2 個詞的 `uri.` 有標點「.」，程式判斷要刪掉，"
+            "詞素切割第 2 個詞的 `uri.` 有標點 `.`，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `uri`",
         )
 
@@ -309,13 +309,13 @@ class TestSegmentPunctuation(unittest.TestCase):
         self.assertEqual(self.hint("O no iti:ya-ay=ho sanay", "阿美"), "")
 
     def test_別的語言的_喉塞音符號算標點(self):
-        self.assertIn("有標點「^」", self.hint("pa^tang", "排灣"))
+        self.assertIn("有標點 `^`", self.hint("pa^tang", "排灣"))
 
     def test_泰雅語的底線不算標點(self):
         self.assertEqual(self.hint("k_yaqih hi=nya", "泰雅"), "")
 
     def test_別的語言的底線算標點(self):
-        self.assertIn("有標點「_」", self.hint("k_yaqih", "排灣"))
+        self.assertIn("有標點 `_`", self.hint("k_yaqih", "排灣"))
 
     def test_邵語的點與賽夏語的冒號不算標點(self):
         self.assertEqual(self.hint("put.huum", "邵"), "")
@@ -333,7 +333,7 @@ class TestSegmentPunctuation(unittest.TestCase):
 
     def test_詞頭的點仍算標點(self):
         result = check_segment_punctuation("nanu.yasa .qu", "泰雅")
-        self.assertIn("`.qu` 有標點「.」", result.hint)
+        self.assertIn("`.qu` 有標點 `.`", result.hint)
         self.assertEqual(result.discuss["詞中間的 ."], 1)
 
     def test_獨立的說話者標記_列入待討論(self):
@@ -342,7 +342,7 @@ class TestSegmentPunctuation(unittest.TestCase):
         self.assertEqual(result.discuss["說話者標記"], 2)
         self.assertEqual(
             result.hint,
-            "詞素切割第 4 個詞的 `azua?` 有標點「?」，程式判斷要刪掉，"
+            "詞素切割第 4 個詞的 `azua?` 有標點 `?`，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `azua`",
         )
 
@@ -351,7 +351,7 @@ class TestSegmentPunctuation(unittest.TestCase):
         self.assertNotIn("說話者標記", result.discuss)
         self.assertEqual(
             result.hint,
-            "詞素切割第 1 個詞的 `Yu:m-uwah` 有標點「:」，程式判斷要刪掉，"
+            "詞素切割第 1 個詞的 `Yu:m-uwah` 有標點 `:`，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `Yum-uwah`",
         )
 

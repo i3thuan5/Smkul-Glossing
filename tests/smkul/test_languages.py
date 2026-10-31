@@ -30,6 +30,18 @@ class TestCode(unittest.TestCase):
         self.assertEqual(languages.code("阿美", "不存在"), "")
 
 
+class TestSplitKind(unittest.TestCase):
+    """從語料路徑取出族別與語言別。"""
+
+    def test_族別與語言別(self):
+        self.assertEqual(languages.split_kind("阿美族/秀姑巒/a.docx"),
+                         ("阿美", "秀姑巒"))
+
+    def test_沒有語言別目錄就用族別(self):
+        self.assertEqual(languages.split_kind("太魯閣族/a.docx"),
+                         ("太魯閣", "太魯閣"))
+
+
 class TestCsv(unittest.TestCase):
 
     def test_csv_在版控內(self):

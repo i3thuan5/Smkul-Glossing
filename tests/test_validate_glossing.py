@@ -8,7 +8,7 @@ import unittest
 from tests import DATA
 
 from scripts import validate_glossing
-from scripts.smkul import proofreading
+from scripts.smkul import proofreading, report
 from scripts.smkul.entry import Issue, IssueKind, NormLog
 
 # 「組」改稱「段」。重組、分組、組成、組裝是動詞，不算。
@@ -21,16 +21,6 @@ class TestNoMorphology(unittest.TestCase):
     def test_總覽沒有構詞(self):
         got = validate_glossing.overview([], [], 0, 0)
         self.assertNotIn("構詞", got)
-
-    def test_請對方處理沒有構詞判斷困難(self):
-        got = validate_glossing.todo_section([], total_entries=0)
-        self.assertNotIn("構詞判斷困難的詞素要怎麼處理", got)
-        self.assertNotIn("構詞", got)
-
-    def test_請對方處理沒有用語討論(self):
-        """用語已在 2026.09 會議案由四決議。"""
-        got = validate_glossing.todo_section([], total_entries=0)
-        self.assertNotIn("用語要不要換成語言學的標準說法", got)
 
 
 class TestTerms(unittest.TestCase):
@@ -47,21 +37,8 @@ class TestTerms(unittest.TestCase):
             ["族別", "語言別", "檔數", "段數", "通過", "有問題", "通過率"],
         )
 
-    def test_需要修正的標注用新分類名(self):
-        issues = [
-            Issue(IssueKind.GLOSS_FEWER, "a.docx", "20"),
-            Issue(IssueKind.MISSING_GLOSS_LINE, "a.docx", "98"),
-            Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, "a.docx", "8",
-                  "只差一個字母:「l」→「r」"),
-        ]
-        got = validate_glossing.todo_section(issues, total_entries=3)
-        self.assertIn("| 詞素翻譯的詞比詞素切割少 | 1 |", got)
-        self.assertIn("| 缺詞素翻譯行 | 1 |", got)
-        self.assertIn("| 族語原句與詞素切割不符-只差一個字母 | 1 |", got)
-
-    def test_討論與比對說明沒有舊用語(self):
-        got = (validate_glossing.todo_section([], total_entries=0) +
-               validate_glossing.COMPARE_NOTE)
+    def test_比對說明沒有舊用語(self):
+        got = validate_glossing.COMPARE_NOTE
         for old in ("切分", "gloss", "原文", "構詞符號"):
             self.assertNotIn(old, got)
         self.assertNotRegex(got, OLD_UNIT)
@@ -85,21 +62,46 @@ class TestSegmentPunctuation(unittest.TestCase):
 
     def test_沒有標點不同(self):
         got = (validate_glossing.overview([], self.issues(), 0, 0) +
-               validate_glossing.todo_section(self.issues(), 0) +
                validate_glossing.COMPARE_NOTE)
         self.assertNotIn("標點不同", got)
         self.assertNotIn("句讀慣例", got)
         self.assertNotIn("warning", got)
-
-    def test_需要修正的標注列出詞素切割有標點(self):
-        got = validate_glossing.todo_section(self.issues(), 0)
-        self.assertIn("| 詞素切割有標點 | 1 |", got)
 
     def test_待討論章有三節(self):
         got = validate_glossing.discuss_chapter([])
         self.assertIn("待討論：詞素切割的特殊符號", got)
         for label in ("`+`", "詞中間的 `.`", "說話者標記"):
             self.assertIn(label, got)
+
+
+class TestOverview(unittest.TestCase):
+    """總覽:翻譯訓練YAML 的說法、嚴重度對應表(features/分析報告.feature)。"""
+
+    def test_改稱翻譯訓練YAML(self):
+        got = validate_glossing.overview([], [], 0, 0)
+        self.assertIn("已匯出翻譯訓練YAML", got)
+        self.assertNotIn("已匯出 YAML", got)
+
+    def test_有嚴重度對應表(self):
+        got = validate_glossing.overview([], [], 0, 0)
+        self.assertIn("| 嚴重度 | 翻譯訓練YAML | 報告舉例 | 請老師校對 |", got)
+        self.assertIn("| 錯誤（照常匯出） | 匯出 | 舉例 | 要 |", got)
+        self.assertIn("| 現象 | 不匯出 | 舉例 | 不要 |", got)
+
+    def test_第7章的順序跟問題表一樣(self):
+        issues = [
+            Issue(IssueKind.CHINESE_ONLY, "a.docx", "1"),
+            Issue(IssueKind.CHINESE_ONLY, "a.docx", "2"),
+            Issue(IssueKind.GLUED_LINE, "a.docx", "3"),
+            Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, "a.docx", "4",
+                  "詞數不同:"),
+        ]
+        got = validate_glossing.kinds_section(issues)
+        titles = []
+        for line in got.splitlines():
+            if line.startswith("### "):
+                titles.append(line[4:].split("(")[0])
+        self.assertEqual(titles, report.ordered_labels(issues))
 
 
 class TestProofreading(unittest.TestCase):
@@ -141,7 +143,7 @@ class TestProofreading(unittest.TestCase):
         files, issues, mismatch, proof = self.collect(judgements)
         for issue in issues:
             self.assertNotEqual(issue.id, issue_id)
-        self.assertEqual(len(proof.confirmed), 1)
+        # 老師確認過的問題只留在校對表,報告不另外列(proofreading spec)。
         for entry in files[0].entries:
             self.assertTrue(entry.is_clean(), entry.number)
         ids = []
@@ -156,23 +158,56 @@ class TestProofreading(unittest.TestCase):
         for issue in issues:
             ids.append(issue.id)
         self.assertIn(issue_id, ids)
-        self.assertEqual(len(proof.discussed), 1)
 
     def test_校對流程一節(self):
-        got = validate_glossing.proofreading_section()
+        got = validate_glossing.proofreading_section([])
         self.assertIn("校對流程", got)
         self.assertIn("kithann/out/校對表/", got)
         self.assertIn("kithann/校對/", got)
         for choice in proofreading.CHOICES:
             self.assertIn(choice, got)
 
-    def test_兩章沒有資料寫無_確認過的在後面(self):
-        empty = validate_glossing.Proof([], [], [])
-        chapters = validate_glossing.proof_chapters(empty, [])
-        self.assertTrue(chapters[0].startswith("## 老師標要討論的項目"))
-        self.assertTrue(chapters[1].startswith("## 老師確認過、不是錯誤"))
-        for chapter in chapters:
-            self.assertIn("（無）", chapter)
+    def test_沒有讀回提醒就不寫(self):
+        got = validate_glossing.proofreading_section([])
+        self.assertNotIn("讀回校對表時的提醒", got)
+
+    def test_讀回提醒列在校對流程最後(self):
+        got = validate_glossing.proofreading_section(
+            ["排灣.xlsx 「校對」分頁第 2 列的判斷「誤報」不是三個選項之一"])
+        self.assertIn("讀回校對表時的提醒", got)
+        self.assertGreater(got.index("「誤報」"), got.index("kithann/校對/"))
+
+
+class TestChapters(unittest.TestCase):
+    """corpus-export「glossing 報告的章節」:用最小範例跑一次 run()。"""
+
+    def test_章節與刪掉的部分(self):
+        work = tempfile.mkdtemp()
+        try:
+            folder = os.path.join(work, "giliau", "阿美族", "秀姑巒")
+            os.makedirs(folder)
+            shutil.copy(os.path.join(DATA, "最小範例.docx"), folder)
+            out_dir = os.path.join(work, "out")
+            validate_glossing.run(
+                os.path.join(work, "giliau"),
+                proof_dir=os.path.join(work, "校對"), out_dir=out_dir)
+            with open(os.path.join(out_dir, "glossing_report.md"),
+                      encoding="utf-8") as handle:
+                got = handle.read()
+            names = sorted(os.listdir(out_dir))
+        finally:
+            shutil.rmtree(work)
+        titles = []
+        for line in got.splitlines():
+            if line.startswith("## "):
+                titles.append(line.split(". ", 1)[1])
+        self.assertEqual(titles, [
+            "總覽", "依語言別統計", "翻譯訓練YAML 輸出", "校對流程",
+            "語料格式說明", "自動處理與比對政策", "問題類型說明與例子",
+            "待討論：詞素切割的特殊符號",
+        ])
+        self.assertNotIn("標記清單", got)
+        self.assertEqual(names, ["corpus.yaml", "glossing_report.md", "校對表"])
 
 
 if __name__ == "__main__":

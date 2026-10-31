@@ -323,11 +323,8 @@ MISMATCH_FEW = "差 2-3 個字母"
 MISMATCH_MANY = "多處不同"
 MISMATCH_LENGTH = "長度差很多"
 
+# 小類的順序就是報告的順序,跟 features/分析報告.feature 的表一樣。
 MISMATCH_WHY = OrderedDict()
-MISMATCH_WHY[MISMATCH_WORDS] = (
-    "字母序列一樣，可是詞的個數不一樣——族語原句黏成一個詞、詞素切割拆開"
-    "(或相反)。依照「詞數要一個對一個、只有依附詞例外」，這種算不符。"
-)
 MISMATCH_WHY[MISMATCH_APOSTROPHE] = (
     "只有喉塞音單引號的有無或位置不同。排灣語 ODS 1-3 規定詞素切割的 "
     "[k] / ['] 要跟著族語原句的寫法，所以這一類多半是要決定哪一邊才對。"
@@ -336,12 +333,16 @@ MISMATCH_WHY[MISMATCH_ONE] = (
     "只差一個字母，多半是詞素切割時多打或漏打一個音，或是照發音改寫了拼法。"
 )
 MISMATCH_WHY[MISMATCH_FEW] = "差 2-3 個字母，通常是拼法慣例不同。"
-MISMATCH_WHY[MISMATCH_MANY] = (
-    "差很多個字母，可能是換了詞、或族語原句與詞素切割不是同一句。"
+MISMATCH_WHY[MISMATCH_WORDS] = (
+    "字母序列一樣，可是詞的個數不一樣——族語原句黏成一個詞、詞素切割拆開"
+    "(或相反)。依照「詞數要一個對一個、只有依附詞例外」，這種算不符。"
 )
 MISMATCH_WHY[MISMATCH_LENGTH] = (
     "長度差四分之一以上，通常是詞素切割比族語原句少了一整串(或多了一整串)，"
     "內容可能遺失。"
+)
+MISMATCH_WHY[MISMATCH_MANY] = (
+    "差很多個字母，可能是換了詞、或族語原句與詞素切割不是同一句。"
 )
 
 # 差幾個字母算「一點點」,超過就算多處不同。
@@ -511,11 +512,15 @@ def _unique(chars):
 
 
 def _quoted(chars):
-    """每個字元各用「」包起來,例如「?」「!」。"""
+    """每個字元各用反引號包起來,用「、」隔開,例如 `?`、`!`。
+
+    被引用的字元是語料,跟報告裡其他語料一樣放在反引號裡,
+    報告內文的全形逗號規則才不會碰到它。反引號本身換成單引號。
+    """
     out = []
     for char in _unique(chars):
-        out.append("「" + char + "」")
-    return "".join(out)
+        out.append("`" + char.replace("`", "'") + "`")
+    return "、".join(out)
 
 
 def _word_problem(word, allowed, discuss):
@@ -559,17 +564,17 @@ def _sentence(words, position, marks):
         if char in UNSURE_SYMBOLS:
             unsure.append(char)
     if unsure:
-        return (where + "括號「" + "".join(_unique(unsure)) + "」，"
+        return (where + "括號 `" + "".join(_unique(unsure)) + "`，"
                 "程式無法判斷，請標注者確認")
     if not _has_letter(word):
-        return (where + "符號" + _quoted(marks) + "，程式判斷要整個詞刪掉，"
+        return (where + "符號 " + _quoted(marks) + "，程式判斷要整個詞刪掉，"
                 "因為詞素切割不能有標點，應該寫是 `" +
                 _without(words, position) + "`")
     fixed = []
     for char in word:
         if char not in marks:
             fixed.append(char)
-    return (where + "標點" + _quoted(marks) + "，程式判斷要刪掉，"
+    return (where + "標點 " + _quoted(marks) + "，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `" + "".join(fixed) + "`")
 
 

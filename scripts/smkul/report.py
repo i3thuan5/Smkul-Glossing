@@ -4,24 +4,18 @@ import datetime
 import os
 from collections import Counter, OrderedDict, namedtuple
 
-from scripts.smkul.entry import (NORM_FEATURE, IssueKind, Severity,
-                                 code)
-from scripts.smkul.markers import SHEET_OF
+from scripts.smkul.entry import (NORM_FEATURE, SEVERITY, IssueKind,
+                                 Severity, code)
+from scripts.smkul.parser import MISMATCH_WHY
 from scripts.smkul.rules import SPECIAL_MARKS, SYMBOL_MEANING
 
 OUT_DIR = os.path.join("kithann", "out")
 
 YAML_SOURCE_WHY = (
-    "YAML 一律**由 docx 產生**，不由 txt 產生。理由:\n\n"
-    "1. docx 的審閱註解本文放在 `word/comments.xml`，內文"
-    "(`word/document.xml`)只留零文字的 `commentRangeStart` 標記，"
-    "所以抽內文的時候註解**天生不會混進來**。\n"
-    "2. txt 是 docx 匯出的副本，匯出時每條註解會在內文留下兩個 "
-    "`[字母]` 錨點，註解本文也被寫成一般文字行，會污染語料。\n"
-    "3. 從 docx 直接讀，不需要任何清除步驟，也就沒有「清錯、"
-    "把語料的字一起刪掉」的風險。\n\n"
-    "docx 的文字顏色與標亮(例如太魯閣 1 有 35 處紅字)兩邊都看不到，"
-    "仍請對方說明紅字的意思。"
+    "翻譯訓練YAML 一律**由 docx 產生**。依 2026.09 會議案由一「以 docx 為主」，"
+    "語料只讀 docx。docx 的審閱註解本文放在 `word/comments.xml`，內文"
+    "(`word/document.xml`)只留零文字的標記，所以抽內文的時候註解"
+    "**天生不會混進來**；案由二也決議審閱註解全部忽略。"
 )
 
 
@@ -68,22 +62,46 @@ def count_kinds(issues):
     return counter
 
 
-def group_by_path(issues):
-    """依檔案分組，順序照原本出現的順序。"""
-    groups = OrderedDict()
-    for issue in issues:
-        groups.setdefault(issue.path, []).append(issue)
-    return groups
+def ordered_labels(issues):
+    """這次有發生的問題名稱,照 SEVERITY 的順序,不看筆數。
+
+    「族語原句與詞素切割不符」展開成 parser.MISMATCH_WHY 的小類。
+    順序的正本是 features/分析報告.feature。
+    """
+    counter = count_kinds(issues)
+    out = []
+    for kind in SEVERITY:
+        if kind is IssueKind.SOURCE_SEGMENT_MISMATCH:
+            for sub in MISMATCH_WHY:
+                label = kind.value + "-" + sub
+                if label in counter:
+                    out.append(label)
+        if kind.value in counter:
+            out.append(kind.value)
+    return out
+
+
+# 問題表上方的說明:筆數怎麼算、編號對到哪一節。
+KIND_TABLE_NOTE = (
+    "筆數的算法：段層級的問題一段同一種只記一筆（所以筆數就是段數）；"
+    "孤兒時間碼沒有段，以時間碼計；時間碼格式混用、時間碼單位不明以檔案計。"
+    "編號 N 就是「問題類型說明與例子」那一章的第 N 節。"
+)
 
 
 def kind_table(issues):
+    """總覽的問題表:編號、問題、嚴重度、筆數。"""
     counter = count_kinds(issues)
+    severity_of = {}
+    for issue in issues:
+        severity_of[issue_label(issue)] = issue.severity.value
     rows = []
-    for label, number in counter.most_common():
-        rows.append((label, number))
+    for index, label in enumerate(ordered_labels(issues)):
+        rows.append((index + 1, label, severity_of[label], counter[label]))
     if not rows:
         return "(無)"
-    return table(["問題", "筆數"], rows)
+    return KIND_TABLE_NOTE + "\n\n" + table(
+        ["編號", "問題", "嚴重度", "筆數"], rows)
 
 
 def norm_section(log, compare_note=""):
@@ -140,42 +158,6 @@ def _with_id(where, issue):
     return where
 
 
-def _where(issue):
-    """明細裡的位置:第幾段,或整個檔案。"""
-    if issue.number:
-        return _with_id("第" + issue.number + "段", issue)
-    return _with_id("整個檔案", issue)
-
-
-def detail_section(title, issues, limit=40):
-    """錯誤明細，依檔案分組，每段定位到編號。
-
-    有 compare 的(txt/docx、族語原句/詞素切割)分成獨立的子項，較好對照。
-    """
-    lines = [heading(title), ""]
-    if not issues:
-        lines.append("(無)")
-        return "\n".join(lines)
-    groups = group_by_path(issues)
-    for path, found in groups.items():
-        lines.append("")
-        lines.append(heading(path + "(" + str(len(found)) + " 筆)", 3))
-        lines.append("")
-        for issue in found[:limit]:
-            head = "- " + _where(issue) + "|**" + issue_label(issue) + "**"
-            if issue.detail:
-                head = head + ":" + issue.detail
-            lines.append(head)
-            for label, value in issue.compare:
-                lines.append("  - " + label + ":" + code(value))
-        if len(found) > limit:
-            lines.append(
-                "- (其餘 " + str(len(found) - limit) + " 筆未列出，"
-                "總數請看上面的統計)"
-            )
-    return "\n".join(lines)
-
-
 def number_headings(body):
     """幫章節加編號:## 變成 ## 1.、### 變成 ## 1.1，才好在會議上指位置。
 
@@ -220,10 +202,10 @@ def _tidy(body):
     return "\n".join(out) + "\n"
 
 
-def write(name, sections):
-    """把每一章接成一篇，寫進 kithann/out/。"""
-    os.makedirs(OUT_DIR, exist_ok=True)
-    path = os.path.join(OUT_DIR, name)
+def write(name, sections, out_dir=OUT_DIR):
+    """把每一章接成一篇，寫進 out_dir(預設 kithann/out/)。"""
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, name)
     body = _tidy(number_headings("\n\n".join(sections)))
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(body)
@@ -303,68 +285,6 @@ def kind_section(title, issues, why_of, order=None):
         for issue in found:
             for line in render_issue(issue):
                 lines.append(line)
-    return "\n".join(lines)
-
-
-def _teacher_lines(pairs, with_detail):
-    """老師判斷過的問題,依檔案分組。pairs 是 (Issue, 備註)。"""
-    lines = []
-    groups = OrderedDict()
-    for issue, note in pairs:
-        groups.setdefault(issue.path, []).append((issue, note))
-    for path, found in groups.items():
-        lines.append("")
-        lines.append(heading(path + "(" + str(len(found)) + " 筆)", 3))
-        lines.append("")
-        for issue, note in found:
-            head = "- " + _where(issue) + "|**" + issue_label(issue) + "**"
-            detail = shown_detail(issue)
-            if with_detail and detail:
-                head = head + ":" + detail
-            lines.append(head)
-            if note:
-                lines.append("  - 備註:" + note)
-    return lines
-
-
-def teacher_discuss_section(title, pairs):
-    """老師在校對表標「要討論」的項目,給下次開會用。"""
-    lines = [heading(title), ""]
-    lines.append(
-        "族語老師在校對表標「要討論」的問題。這些問題照常算在上面的"
-        "總覽與問題章，這裡另外列出來，附老師的備註。")
-    if not pairs:
-        lines.append("")
-        lines.append("（無）")
-        return "\n".join(lines)
-    for line in _teacher_lines(pairs, False):
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def confirmed_section(title, pairs, problems):
-    """老師確認過、不是錯誤的問題,放在報告最後。
-
-    problems 是讀回校對表時遇到的問題(判斷欄寫錯字、判斷互相矛盾),
-    列在這一章的開頭。
-    """
-    lines = [heading(title), ""]
-    if problems:
-        lines.append("讀回校對表時的提醒:")
-        lines.append("")
-        for problem in problems:
-            lines.append("- " + problem)
-        lines.append("")
-    lines.append(
-        "族語老師在校對表標「docx 正確，程式判斷錯」的問題。這些問題"
-        "不算在上面的總覽與問題章，也不擋匯出，共 " + str(len(pairs)) +
-        " 筆。")
-    if not pairs:
-        lines.append("")
-        lines.append("（無）")
-        return "\n".join(lines)
-    for line in _teacher_lines(pairs, True):
-        lines.append(line)
     return "\n".join(lines)
 
 
@@ -503,29 +423,7 @@ def _timecode_rows(files):
     return rows
 
 
-def _sheet_rows(files, sheet_names):
-    """語料目錄與 ODS sheet 的對應。回傳 (對應表, 還沒交付語料的 sheet)。"""
-    delivered = OrderedDict()
-    for corpus in files:
-        top = corpus.path.split("/")[0]
-        sheet = SHEET_OF.get(top, "")
-        if sheet:
-            delivered.setdefault(sheet, set()).add(top)
-    rows = []
-    for folder, sheet in sorted(SHEET_OF.items()):
-        if sheet in delivered:
-            state = "已交付"
-        else:
-            state = "尚未交付"
-        rows.append((code(folder + "/"), sheet, state))
-    waiting = []
-    for name in sorted(sheet_names or []):
-        if name not in delivered:
-            waiting.append(name)
-    return rows, waiting
-
-
-def format_section(files, sheet_names=None):
+def format_section(files):
     """「語料格式說明」:語料長什麼樣。規則本身在 features/。"""
     lines = [heading("語料格式說明"), "", FORMAT_INTRO, ""]
 
@@ -581,16 +479,4 @@ def format_section(files, sheet_names=None):
     lines.append(heading("外來語標籤", 3))
     lines.append("")
     lines.append(LOANWORD_NOTE)
-    lines.append("")
-
-    lines.append(heading("語料目錄與標記清單 sheet 的對應", 3))
-    lines.append("")
-    rows, waiting = _sheet_rows(files, sheet_names)
-    lines.append(table(["語料目錄", "ODS sheet", "狀態"], rows))
-    if waiting:
-        lines.append("")
-        lines.append(
-            "《常用構詞標記清單》還有這幾個 sheet 尚未交付語料:" +
-            "、".join(waiting) + "。魯凱族若日後交付茂林、萬山的語料，"
-            "需另建對應。")
     return "\n".join(lines)

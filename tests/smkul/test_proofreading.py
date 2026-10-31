@@ -279,6 +279,8 @@ class TestWriteSheets(unittest.TestCase):
             (TAROKO, "9", IssueKind.CHINESE_ONLY, "太魯閣", "太魯閣"),
             (AMIS, "26", IssueKind.REVERSED_TIMECODE, "阿美", "秀姑巒"),
             (AMIS, "27", IssueKind.GLUED_LINE, "阿美", "秀姑巒"),
+            (AMIS, "1", IssueKind.EMPTY_ENTRY, "阿美", "秀姑巒"),
+            (AMIS, "", IssueKind.ORPHAN_TIMECODE, "阿美", "秀姑巒"),
         ]
         for index, (path, number, kind, ethnic, variant) in enumerate(cases):
             issue = Issue(kind, path, number, "提示" + str(index))
@@ -303,21 +305,25 @@ class TestWriteSheets(unittest.TestCase):
         numbers = []
         for row in rows[1:]:
             numbers.append(row[2])
-        self.assertEqual(numbers, ["9", "9", "10"])
+        # 第 9 段的純華語句是現象，不列入校對表。
+        self.assertEqual(numbers, ["9", "10"])
         first = dict(zip(proofreading.HEADERS, rows[1]))
         self.assertEqual(first["檔案"], TAROKO)
         self.assertEqual(first["族語原句"], "iq kiya")
         self.assertEqual(first["華語翻譯"], "華語")
 
-    def test_四級嚴重度都有(self):
+    def test_只列錯誤兩級(self):
+        # 原本「四級嚴重度都有」改成只列錯誤兩級:proofreading spec
+        # 「產生校對表」(report-trim)。
         proofreading.write_sheets(self.folder, self.rows(), {})
         kinds = []
         for name in os.listdir(self.folder):
             for row in self.read(name)["校對"][1:]:
                 kinds.append(row[3])
-        for kind in ("詞素切割有標點", "純華語句", "結束時間早於開始",
-                     "行黏在一起"):
+        for kind in ("詞素切割有標點", "行黏在一起"):
             self.assertIn(kind, kinds)
+        for kind in ("純華語句", "結束時間早於開始", "空段", "孤兒時間碼"):
+            self.assertNotIn(kind, kinds)
 
     def test_帶入舊判斷與備註(self):
         judgements = {"ISSUE-00000000": proofreading.Judgement(

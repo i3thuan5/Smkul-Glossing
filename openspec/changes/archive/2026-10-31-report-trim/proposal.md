@@ -6,6 +6,7 @@ glossing_report.md 要轉成 docx 交給業務單位，校對表交給族語老�
 
 ## What Changes
 
+- **新增 `features/分析報告.feature`，當嚴重度規則的正本**：對應表、每一種問題的嚴重度與先後順序（也是問題表與第 7 章的順序）、報告的章節都寫在這裡；step 檢查 `entry.py` 的 `SEVERITY`、匯出、校對表、報告有沒有照著跑。spec 只指向 feature，不重抄名單。
 - **嚴重度決定三種產出**：
   | 嚴重度 | 翻譯訓練YAML | 報告舉例 | 請老師校對 |
   |---|---|---|---|
@@ -17,7 +18,8 @@ glossing_report.md 要轉成 docx 交給業務單位，校對表交給族語老�
 - **BREAKING（校對表）只列「錯誤」與「錯誤（照常匯出）」**：純華語句、空段、孤兒時間碼、時間碼的警告不再列入。
 - **報告總覽**：
   - 加上上面那張嚴重度對應表。
-  - 問題表加兩欄，變成「編號、問題、嚴重度、筆數」；排序是先依嚴重度、同一級裡筆數多的在前。第 7 章「問題類型說明與例子」的小節照同一個順序排，所以「編號 3」就是「第 7.3 節」。
+  - 問題表加兩欄，變成「編號、問題、嚴重度、筆數」；順序固定，照 `features/分析報告.feature` 的表，不看筆數。第 7 章「問題類型說明與例子」的小節照同一個順序排，所以「編號 3」就是「第 7.3 節」。
+- **BREAKING（報告、校對表）三個問題改名，詞素切割一律放在詞素翻譯前面**：「詞素翻譯的詞比詞素切割少」→「詞素切割的詞比詞素翻譯多」、「詞素翻譯的詞比詞素切割多」→「詞素切割的詞比詞素翻譯少」、「符號的種類不一樣」→「詞素切割和詞素翻譯的符號不一樣」。`features/詞素切割與詞素翻譯對應.feature` 的 Scenario 名跟著改（規劃時已改好）。
 - **報告與 spec 裡的「YAML」改稱「翻譯訓練YAML」**。檔名 `kithann/out/corpus.yaml` 與 YAML 的 key 都不改。
 - **BREAKING（報告）刪掉這些章節**：
   - 開頭的「標記清單：`…ods`」那行，以及語料格式說明的「語料目錄與標記清單 sheet 的對應」一節（構詞判定停用後已經沒有作用）。
@@ -35,13 +37,15 @@ glossing_report.md 要轉成 docx 交給業務單位，校對表交給族語老�
 ### Modified Capabilities
 
 - `corpus-export`：新增「嚴重度決定三種產出」；「報告內容」換成只有 glossing 報告的新版本（總覽的對應表與編號、沒有問題明細與討論章）；「報告附校對資訊」換成只有「校對流程」一節；「語料格式說明專章」拿掉目錄與 sheet 的對應；「自動處理說明專章」「對照式差異分兩行呈現」只剩 glossing 報告；「只因註解殘留造成的差異不重複列出」移除；「YAML 匯出結構」「exit code」改用語與例子。
+- `glossing-validation`：「詞素切割行與詞素翻譯行對不起來的分類」換成新名稱的版本。
 - `proofreading`：「產生校對表」只列錯誤兩級；「程式判斷錯的問題不再算問題」「要討論與 docx 要修改」不再寫進報告的章節。
 - `docx-txt-consistency`：全部 requirement 移除，capability 退役。
 
 ## Impact
 
 - 程式：`scripts/smkul/entry.py`（空段、孤兒時間碼的嚴重度；刪掉 docx／txt 比對的 4 種問題）、`scripts/smkul/report.py`（總覽問題表、第 7 章排序、刪掉的章節函式）、`scripts/validate_glossing.py`（總覽、刪章節、校對流程一節加讀取提醒、不再讀 ODS）、`scripts/smkul/proofreading.py`（只收錯誤兩級）；刪除 `scripts/check_docx_txt.py`、`scripts/smkul/pairing.py`（`split_kind()` 搬到 `languages.py`）、`docx2text.py` 的審閱註解抽取。
+- feature：新增 `features/分析報告.feature` 與 `features/steps/分析報告.py`；`features/詞素切割與詞素翻譯對應.feature` 三個 Scenario 改名。
 - 測試：`tests/test_check_docx_txt.py`、`tests/smkul/test_pairing.py` 刪除，`tests/smkul/test_docx2text.py` 拿掉審閱註解的測試；`tests/smkul/test_report.py`、`tests/test_validate_glossing.py`、`tests/smkul/test_proofreading.py`、`tests/smkul/test_entry.py` 跟著改。
 - 文件：`README.md` 拿掉 check_docx_txt 的說明；`openspec/specs/docx-txt-consistency/` 退役；`corpus-export` spec 的 Purpose 改寫。
 - 輸出：`kithann/out/docx_txt_report.md` 不再產生（舊檔已刪）；glossing_report.md 少了 5 個部分；校對表列數從 3650 降到 3327；YAML 段數不變；exit code 計數的錯誤從 3269 降到 3224。
-- 不動：`features/*.feature`、YAML 檔名與 key、docx 內文不含審閱註解的檢查（corpus-parsing「語料來源為 docx」）。
+- 不動：其他既有的 `features/*.feature`、YAML 檔名與 key、docx 內文不含審閱註解的檢查（corpus-parsing「語料來源為 docx」）。

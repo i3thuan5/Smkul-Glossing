@@ -53,3 +53,20 @@ def code(ethnic, variant):
         if name in table:
             return table[name]
     return ""
+
+
+def split_kind(rel_path):
+    """從語料的相對路徑取出族別與語言別。
+
+    `阿美族/秀姑巒/a.docx` → (阿美, 秀姑巒);沒有語言別目錄的
+    `太魯閣族/a.docx` → (太魯閣, 太魯閣)。
+    """
+    parts = rel_path.split(os.sep)
+    if len(parts) < 2:
+        parts = rel_path.split("/")
+    ethnic = parts[0].replace("族", "")
+    if len(parts) >= 3:
+        variant = parts[1]
+    else:
+        variant = ethnic
+    return ethnic, variant
