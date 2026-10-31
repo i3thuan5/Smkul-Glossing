@@ -191,7 +191,7 @@ class TestChapters(unittest.TestCase):
             validate_glossing.run(
                 os.path.join(work, "giliau"),
                 proof_dir=os.path.join(work, "校對"), out_dir=out_dir)
-            with open(os.path.join(out_dir, "glossing_report.md"),
+            with open(os.path.join(out_dir, "Glossing驗證報告.md"),
                       encoding="utf-8") as handle:
                 got = handle.read()
             names = sorted(os.listdir(out_dir))
@@ -207,7 +207,7 @@ class TestChapters(unittest.TestCase):
             "待討論：詞素切割的特殊符號",
         ])
         self.assertNotIn("標記清單", got)
-        self.assertEqual(names, ["corpus.yaml", "glossing_report.md", "校對表"])
+        self.assertEqual(names, ["Glossing驗證報告.md", "corpus.yaml", "校對表"])
 
 
 if __name__ == "__main__":

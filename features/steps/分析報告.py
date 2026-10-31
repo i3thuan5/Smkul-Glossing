@@ -176,9 +176,11 @@ def step_產生報告(context):
     context.out_dir = os.path.join(work, "out")
     validate_glossing.run(
         base, proof_dir=os.path.join(work, "校對"), out_dir=context.out_dir)
-    path = os.path.join(context.out_dir, "glossing_report.md")
-    with open(path, encoding="utf-8") as handle:
-        context.report = handle.read()
+    context.report = ""
+    path = os.path.join(context.out_dir, validate_glossing.REPORT_NAME)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as handle:
+            context.report = handle.read()
 
 
 @then("報告的章節依序是：")
@@ -192,6 +194,13 @@ def step_章節(context):
     for row in context.table:
         expected.append(row["章節"])
     assert got == expected, "\n報告:" + str(got) + "\n預期:" + str(expected)
+
+
+@then('報告的檔名是 "{name}"')
+def step_報告檔名(context, name):
+    names = sorted(os.listdir(context.out_dir))
+    assert name in names, "輸出資料夾裡沒有 " + name + ":" + str(names)
+    assert "glossing_report.md" not in names, "還產生了舊檔名 glossing_report.md"
 
 
 @then("不會產生 docx／txt 一致性報告")

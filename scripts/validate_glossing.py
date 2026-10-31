@@ -5,7 +5,7 @@
     python -m scripts.validate_glossing [語料目錄]
 
 通過驗證的段匯出到 kithann/out/corpus.yaml，不通過的列進
-kithann/out/glossing_report.md，校對表寫到 kithann/out/校對表/。
+kithann/out/Glossing驗證報告.md，校對表寫到 kithann/out/校對表/。
 老師填好的校對表放在 kithann/校對/，重跑時會讀回來。
 有錯誤時 exit code 非 0。
 """
@@ -24,6 +24,8 @@ from scripts.smkul.parser import parse_corpus_file
 from scripts.smkul.rules import validate
 
 BASE = os.path.join("kithann", "giliau")
+# 報告的檔名,跟報告標題一樣,業務單位拿到檔案就知道是什麼。
+REPORT_NAME = "Glossing驗證報告.md"
 # 老師交回的校對表放這裡;程式產生的校對表放 SHEET_DIR,每次重跑都會蓋掉。
 PROOF_DIR = os.path.join("kithann", "校對")
 SHEET_DIR = os.path.join("kithann", "out", "校對表")
@@ -336,7 +338,7 @@ def run(base, proof_dir=PROOF_DIR, out_dir=report.OUT_DIR):
         kinds_section(issues),
         discuss_chapter(files),
     ]
-    path = report.write("glossing_report.md", sections, out_dir)
+    path = report.write(REPORT_NAME, sections, out_dir)
     errors, exported, warnings, notices = report.severity_split(issues)
     return path, yaml_path, len(errors)
 

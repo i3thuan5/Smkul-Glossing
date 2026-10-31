@@ -4,7 +4,7 @@ Feature: 分析報告
 
   驗證程式有三種產出，給不一樣的人：
   翻譯訓練YAML（kithann/out/corpus.yaml）給下游做翻譯訓練，
-  glossing_report.md 轉成 docx 給業務單位，
+  Glossing驗證報告.md（kithann/out/）轉成 docx 給業務單位，
   校對表（kithann/out/校對表/*.xlsx）給族語老師。
 
   每一種問題的**嚴重度**決定它在這三種產出裡怎麼處理，
@@ -76,4 +76,5 @@ Scenario: 報告的章節
     | 自動處理與比對政策         |
     | 問題類型說明與例子         |
     | 待討論：詞素切割的特殊符號 |
+  And 報告的檔名是 "Glossing驗證報告.md"
   And 不會產生 docx／txt 一致性報告

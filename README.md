@@ -45,7 +45,7 @@ pip install tox
 
 `kithann/giliau/` 底下是對方提供的族語語料。語料一律以 docx 為準(2026.09 會議案由一),txt 不讀。程式檢查語料、產生報告,產出都放 `kithann/out/`(不進版控)。
 
-標註規則寫在 [features/](features/) 的 `*.feature`,一條規則一份,程式與規格用同一份。嚴重度與三種產出(翻譯訓練YAML、報告、校對表)的關係寫在 [features/分析報告.feature](features/分析報告.feature)。語料的格式(四行結構、時間碼、切割符號、特殊符號、外來語標籤)寫在 `kithann/out/glossing_report.md` 的「語料格式說明」章,每次跑程式重新產生。
+標註規則寫在 [features/](features/) 的 `*.feature`,一條規則一份,程式與規格用同一份。嚴重度與三種產出(翻譯訓練YAML、報告、校對表)的關係寫在 [features/分析報告.feature](features/分析報告.feature)。語料的格式(四行結構、時間碼、切割符號、特殊符號、外來語標籤)寫在 `kithann/out/Glossing驗證報告.md` 的「語料格式說明」章,每次跑程式重新產生。
 
 ### 驗證標注並匯出翻譯訓練YAML
 
@@ -53,7 +53,7 @@ pip install tox
 python -m scripts.validate_glossing
 ```
 
-檢查每一段的詞素切割行與詞素翻譯行對不對得起來(詞數與切割符號),並用族語原句逐字檢查詞素切割。通過的段匯出到翻譯訓練YAML `kithann/out/corpus.yaml`(單一檔案,華語 key,結構是 檔案 → 段,每段放族語原句、詞素切割、詞素翻譯、華語翻譯四行,每個檔案另附語言別代號),報告寫到 `kithann/out/glossing_report.md`,需要族語老師校對的問題寫到 `kithann/out/校對表/`(一個語言別一個 xlsx)。老師填好的校對表放進 `kithann/校對/`,重跑時會讀回來。有「錯誤」時 exit code 非 0。
+檢查每一段的詞素切割行與詞素翻譯行對不對得起來(詞數與切割符號),並用族語原句逐字檢查詞素切割。通過的段匯出到翻譯訓練YAML `kithann/out/corpus.yaml`(單一檔案,華語 key,結構是 檔案 → 段,每段放族語原句、詞素切割、詞素翻譯、華語翻譯四行,每個檔案另附語言別代號),報告寫到 `kithann/out/Glossing驗證報告.md`,需要族語老師校對的問題寫到 `kithann/out/校對表/`(一個語言別一個 xlsx)。老師填好的校對表放進 `kithann/校對/`,重跑時會讀回來。有「錯誤」時 exit code 非 0。
 
 可以指定語料目錄:
 
