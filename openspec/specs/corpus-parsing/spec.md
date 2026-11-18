@@ -106,7 +106,17 @@ Parser SHALL 偵測下列結構異常並分類記錄（定位到檔案＋段編�
 
 ### Requirement: 語料來源為 docx
 
-Parser SHALL 以 `kithann/giliau/**/*.docx` 為語料來源，每個 `<w:p>` 段落視為一行，段落內的 `<w:br>` 視為換行、`<w:tab>` 視為一個空白。審閱註解的本文（`word/comments.xml`）與錨點標記（`commentRangeStart/End`、`commentReference`）SHALL NOT 出現在內文。txt 不再是語料來源。
+Parser SHALL 以**執行時指定的語料目錄**底下的所有 docx（`<語料目錄>/**/*.docx`）為語料來源，例如 `kithann/語料標註語料_20261118/`。語料目錄 SHALL NOT 有預設值：對方會陸續交付新版語料，一版一個目錄，每次執行都要明確指定用哪一版；沒指定時程式 SHALL 印出用法並以非 0 結束，SHALL NOT 自己挑一個目錄來跑。每個 `<w:p>` 段落視為一行，段落內的 `<w:br>` 視為換行、`<w:tab>` 視為一個空白。審閱註解的本文（`word/comments.xml`）與錨點標記（`commentRangeStart/End`、`commentReference`）SHALL NOT 出現在內文。txt 不再是語料來源。
+
+#### Scenario: 沒指定語料目錄就停止
+
+- **WHEN** 執行 `python -m scripts.validate_glossing`，沒有帶語料目錄
+- **THEN** 程式印出用法、以非 0 結束，不產生報告、YAML 與校對表
+
+#### Scenario: 指定新版語料目錄
+
+- **WHEN** 執行 `python -m scripts.validate_glossing kithann/語料標註語料_20261118`
+- **THEN** 只讀這個目錄底下的 docx，舊版 `kithann/giliau/` 的檔案不會混進來
 
 #### Scenario: docx 內文不含註解
 

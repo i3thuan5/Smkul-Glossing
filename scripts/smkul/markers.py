@@ -20,8 +20,6 @@ REPEAT = "{" + TABLE_NS + "}number-columns-repeated"
 PARAGRAPH = "{" + TEXT_NS + "}p"
 
 CONTENT = "content.xml"
-ODS_PATH = os.path.join(
-    "kithann", "giliau", "原語會提供-常用構詞標記清單_0713.ods")
 
 # 一格如果重複這麼多次,那是排版用的空白格,不是真的資料。
 MAX_REPEAT = 50
@@ -83,7 +81,7 @@ def row_values(row):
     return values
 
 
-def read_sheets(path=ODS_PATH):
+def read_sheets(path):
     """讀 ODS,回傳 {sheet 名: [每一列的值]}。"""
     with zipfile.ZipFile(path) as archive:
         data = archive.read(CONTENT)
@@ -439,7 +437,7 @@ class MarkerList:
         return pair in self.circumfixes
 
 
-def load_marker_lists(path=ODS_PATH):
+def load_marker_lists(path):
     """回傳 {sheet 名: MarkerList}。"""
     out = {}
     for name, rows in read_sheets(path).items():

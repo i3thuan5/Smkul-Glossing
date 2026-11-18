@@ -210,5 +210,14 @@ class TestChapters(unittest.TestCase):
         self.assertEqual(names, ["Glossing驗證報告.md", "corpus.yaml", "校對表"])
 
 
+class TestMain(unittest.TestCase):
+    """語料目錄必填：新版語料會陸續交付，每次都要指定用哪一版。"""
+
+    def test_沒指定語料目錄就停止(self):
+        with self.assertRaises(SystemExit) as caught:
+            validate_glossing.main([])
+        self.assertNotEqual(caught.exception.code, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

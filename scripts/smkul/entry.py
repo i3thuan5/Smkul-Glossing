@@ -78,7 +78,7 @@ def code(text):
 
 @dataclass
 class Issue:
-    """一筆問題。path 是相對於 kithann/giliau/ 的路徑。"""
+    """一筆問題。path 是相對於語料目錄的路徑。"""
 
     kind: IssueKind
     path: str

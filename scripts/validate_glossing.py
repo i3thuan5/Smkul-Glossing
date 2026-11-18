@@ -2,8 +2,10 @@
 
 用法(在專案根目錄):
 
-    python -m scripts.validate_glossing [語料目錄]
+    python -m scripts.validate_glossing 語料目錄
 
+語料目錄一定要指定，沒有預設值：對方會陸續交付新版語料
+（例如 kithann/語料標註語料_20261118），每次都要確認用的是哪一版。
 通過驗證的段匯出到 kithann/out/corpus.yaml，不通過的列進
 kithann/out/Glossing驗證報告.md，校對表寫到 kithann/out/校對表/。
 老師填好的校對表放在 kithann/校對/，重跑時會讀回來。
@@ -23,7 +25,6 @@ from scripts.smkul.parser import (DISCUSS_DOT, DISCUSS_PLUS,
 from scripts.smkul.parser import parse_corpus_file
 from scripts.smkul.rules import validate
 
-BASE = os.path.join("kithann", "giliau")
 # 報告的檔名,跟報告標題一樣,業務單位拿到檔案就知道是什麼。
 REPORT_NAME = "Glossing驗證報告.md"
 # 老師交回的校對表放這裡;程式產生的校對表放 SHEET_DIR,每次重跑都會蓋掉。
@@ -345,7 +346,8 @@ def run(base, proof_dir=PROOF_DIR, out_dir=report.OUT_DIR):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="驗證標注規則")
-    parser.add_argument("base", nargs="?", default=BASE, help="語料目錄")
+    parser.add_argument(
+        "base", help="語料目錄，例如 kithann/語料標註語料_20261118（必填）")
     args = parser.parse_args(argv)
     path, yaml_path, errors = run(args.base)
     print("報告:" + path)
