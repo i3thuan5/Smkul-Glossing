@@ -12,7 +12,8 @@ from tests import ODS
 
 from scripts.smkul.entry import Entry
 from scripts.smkul.markers import is_uncertain, load_marker_lists
-from scripts.smkul.rules import build_words, split_morphemes, validate
+from scripts.smkul.rules import (build_words, check_correspondence,
+                                 split_morphemes, validate)
 
 
 def make(segmentation, gloss, source=""):
@@ -20,6 +21,50 @@ def make(segmentation, gloss, source=""):
         number="1", start="0", end="1", path="t.txt", source=source,
         segmentation=segmentation, gloss=gloss,
     )
+
+
+class TestInfix(unittest.TestCase):
+    """中綴的分類。feature 每條只用例 1,這裡把例 2、例 3 也跑過,確定分界。"""
+
+    def kind(self, segmentation, gloss):
+        return check_correspondence(segmentation, gloss)[0]
+
+    def test_詞根放在中綴前面(self):
+        for segmentation, gloss in (
+                ("r<m>ngaw", "說<主焦>"),
+                ("i<zua>zua", "處所.那<重疊>"),
+                ("pa<i>tas-an", "寫<經驗貌>-處焦")):
+            self.assertEqual(
+                self.kind(segmentation, gloss), "詞根放在中綴前面", gloss)
+
+    def test_詞綴黏在中綴前面_切割符號在中綴後面(self):
+        for segmentation, gloss in (
+                ("'u=pa-s<em>alav-an", "我.屬格=使役<主焦>-告訴-AN"),
+                ("ka<i>kuza'-an", "做<經驗貌>-工作-處焦"),
+                ("p<in>ataz", "使動<經驗貌>=死")):
+            self.assertEqual(
+                self.kind(segmentation, gloss),
+                "詞綴黏在中綴前面，切割符號在中綴後面", gloss)
+
+    def test_先算通過的幾種(self):
+        for segmentation, gloss in (
+                ("s<in>bazbaz", "參焦<經驗貌>說"),
+                ("p-s<n>eeru", "使動-S<完成>敘述"),
+                ("na-k<em>eljang", "完成貌<主焦>知道"),
+                ("ma<i>-langna", "主焦<經驗貌>下一代"),
+                ("'<m>-utu", "<主焦>-堆積"),
+                ("levul<en>", "拆<受焦>"),
+                ("tu<bu>buru", "講<重疊>故事"),
+                ("S<om>owal=to", "<主焦>說=完成貌")):
+            self.assertIsNone(self.kind(segmentation, gloss), gloss)
+
+    def test_兩個中綴連在一起_後面有詞根(self):
+        self.assertIsNone(self.kind("p-<in><n>usa", "使動-<完成貌><完成貌>送"))
+
+    def test_中綴之外照符號比(self):
+        self.assertEqual(
+            self.kind("k<n>dax-an=ta", "下午=我們.包含.屬格"),
+            "詞素切割有切，詞素翻譯沒有切")
 
 
 class TestSplitMorphemes(unittest.TestCase):

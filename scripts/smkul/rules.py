@@ -86,14 +86,58 @@ GLOSS_MORE = IssueKind.GLOSS_MORE.value
 GLOSS_CUT_MORE = IssueKind.GLOSS_CUT_MORE.value
 GLOSS_CUT_FEWER = IssueKind.GLOSS_CUT_FEWER.value
 SYMBOL_KIND_DIFF = IssueKind.SYMBOL_KIND_DIFF.value
+ROOT_BEFORE_INFIX = IssueKind.ROOT_BEFORE_INFIX.value
+AFFIX_BEFORE_INFIX = IssueKind.AFFIX_BEFORE_INFIX.value
+
+# 連在一起的中綴算一串,例如 <in><n>。
+INFIX_RUN = re.compile(r'(?:<[^<>]*>)+')
+# 中綴的判斷結果:先算通過,不再照符號比。
+INFIX_PASS = "通過"
+
+
+def _is_word_char(char):
+    """詞素的內容(不是切割符號、不是空白、不是行頭行尾)。"""
+    return bool(char) and char not in SYMBOLS and not char.isspace()
+
+
+def _infix_kind(token, gloss):
+    """一對 token 的中綴判斷。
+
+    規格見 features/詞素切割與詞素翻譯對應.feature。回傳 INFIX_PASS
+    (先算通過)、分類名(對不起來),或 None(沒有判斷,照符號比):
+
+    1. 詞素切割的中綴後面沒有詞根(levul<en>、'<m>-utu) → 先算通過。
+    2. 詞素翻譯的中綴前面有內容、後面沒有詞根(說<主焦>、寫<經驗貌>-處焦)
+       → 兩邊符號順序一樣是「詞根放在中綴前面」,不一樣是「詞綴黏在
+       中綴前面，切割符號在中綴後面」(使役<主焦>-告訴)。
+    3. 詞素翻譯的中綴前後都有內容、中間沒有符號(參焦<經驗貌>說、
+       講<重疊>故事) → 先算通過。
+    """
+    for found in INFIX_RUN.finditer(token):
+        if not _is_word_char(token[found.end():found.end() + 1]):
+            return INFIX_PASS
+    passed = False
+    for found in INFIX_RUN.finditer(gloss):
+        before = gloss[found.start() - 1:found.start()]
+        after = gloss[found.end():found.end() + 1]
+        if not _is_word_char(before):
+            continue
+        if not _is_word_char(after):
+            if symbol_shape(token) == symbol_shape(gloss):
+                return ROOT_BEFORE_INFIX
+            return AFFIX_BEFORE_INFIX
+        passed = True
+    if passed:
+        return INFIX_PASS
+    return None
 
 
 def check_correspondence(segmentation, gloss):
     """比詞素切割行與詞素翻譯行對不對得起來。
 
     回傳 (分類, 詞素切割 token, 詞素翻譯 token)。對得起來時分類是
-    None。詞數不同就整行比;詞數相同才逐個 token 比符號,
-    取第一個對不起來的。
+    None。詞數不同就整行比;詞數相同才逐個 token 比,先看中綴
+    (_infix_kind),再比符號,取第一個對不起來的。
     """
     left = tokens(segmentation)
     right = tokens(gloss)
@@ -102,6 +146,11 @@ def check_correspondence(segmentation, gloss):
     if len(right) > len(left):
         return GLOSS_MORE, "", ""
     for index, token in enumerate(left):
+        infix = _infix_kind(token, right[index])
+        if infix == INFIX_PASS:
+            continue
+        if infix is not None:
+            return infix, token, right[index]
         here = symbol_shape(token)
         there = symbol_shape(right[index])
         if here == there:
@@ -114,13 +163,15 @@ def check_correspondence(segmentation, gloss):
     return None, "", ""
 
 
-# 五種分類各對一個問題類別，值就是分類名。
+# 每種分類各對一個問題類別，值就是分類名。
 CORRESPONDENCE_KIND = {
     GLOSS_FEWER: IssueKind.GLOSS_FEWER,
     GLOSS_MORE: IssueKind.GLOSS_MORE,
     GLOSS_CUT_MORE: IssueKind.GLOSS_CUT_MORE,
     GLOSS_CUT_FEWER: IssueKind.GLOSS_CUT_FEWER,
     SYMBOL_KIND_DIFF: IssueKind.SYMBOL_KIND_DIFF,
+    ROOT_BEFORE_INFIX: IssueKind.ROOT_BEFORE_INFIX,
+    AFFIX_BEFORE_INFIX: IssueKind.AFFIX_BEFORE_INFIX,
 }
 
 
@@ -128,13 +179,16 @@ def check_entry_correspondence(entry):
     """一段的詞素切割行與詞素翻譯行對不對得起來，回傳問題清單。
 
     分類與說明都照 features/詞素切割與詞素翻譯對應.feature。詞數不同的
-    兩類對照整行，逐個詞比出來的三類對照那一對詞。
+    兩類對照整行，逐個詞比出來的對照那一對詞。
     """
     kind, left, right = check_correspondence(
         entry.segmentation, entry.gloss)
     if kind is None:
         return []
-    if left or right:
+    if kind in (ROOT_BEFORE_INFIX, AFFIX_BEFORE_INFIX):
+        detail = "這個詞的詞素翻譯，中綴的位置不對"
+        pairs = [("詞素切割", left), ("詞素翻譯", right)]
+    elif left or right:
         detail = "這個詞的切割符號對不起來"
         pairs = [("詞素切割", left), ("詞素翻譯", right)]
     else:

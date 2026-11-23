@@ -15,6 +15,27 @@ def step_讀入(context):
         build_entry(entry)
 
 
+@then('第 {order:d} 段的段號是 "{expect}"')
+def step_第幾段段號(context, order, expect):
+    entry = context.corpus.entries[order - 1]
+    assert entry.number == expect, (
+        "\n預期:" + expect + "\n實際:" + entry.number)
+
+
+@then('第 {order:d} 段重組後的族語原句是 "{expect}"')
+def step_第幾段族語原句(context, order, expect):
+    entry = context.corpus.entries[order - 1]
+    assert entry.source == expect, (
+        "\n預期:" + expect + "\n實際:" + entry.source)
+
+
+@then('第 {order:d} 段重組後的華語翻譯是 "{expect}"')
+def step_第幾段華語翻譯(context, order, expect):
+    entry = context.corpus.entries[order - 1]
+    assert entry.translation == expect, (
+        "\n預期:" + expect + "\n實際:" + entry.translation)
+
+
 @then('第 {order:d} 段重組後的詞素切割是 "{expect}"')
 def step_第幾段詞素切割(context, order, expect):
     entry = context.corpus.entries[order - 1]

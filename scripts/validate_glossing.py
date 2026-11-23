@@ -15,13 +15,11 @@ kithann/out/Glossing驗證報告.md，校對表寫到 kithann/out/校對表/。
 import argparse
 import os
 import sys
-from collections import OrderedDict, namedtuple
+from collections import namedtuple
 
 from scripts.smkul import proofreading, report, yamlout
-from scripts.smkul.entry import KIND_WHY, IssueKind, NormLog
+from scripts.smkul.entry import KIND_WHY, IssueKind, NormLog, Severity
 from scripts.smkul.languages import split_kind
-from scripts.smkul.parser import (DISCUSS_DOT, DISCUSS_PLUS,
-                                  DISCUSS_SPEAKER, MISMATCH_WHY)
 from scripts.smkul.parser import parse_corpus_file
 from scripts.smkul.rules import validate
 
@@ -36,8 +34,9 @@ COMPARE_NOTE = (
     "詞素切割行去掉切割符號"
     "(`-`、`=`、`<>`、`~`)之後，要與族語原句逐字相同，"
     "**多一個或少一個字母、漢字、數字、單引號都算錯誤**。\n\n"
-    "詞的個數也要一個對一個。**只有依附詞（`=` 這個符號）例外**:"
-    "它會把族語原句的兩個詞併成詞素切割的一個詞，這樣算通過。\n\n"
+    "詞的個數也要一個對一個。**依附詞（`=`）、詞組（`.`，泰雅語另外有 "
+    "`+`）例外**:它們會把族語原句的兩個詞併成詞素切割的一個詞，"
+    "這樣算通過；用 `-` 接起來的不算。\n\n"
     "比對時忽略兩項:\n\n"
     "1. 族語原句的標點——族語原句保留句讀，詞素切割不留。詞素切割行"
     "本身不能有標點(2026.09 會議案由五)，有的話另外記「詞素切割有標點」，"
@@ -47,7 +46,10 @@ COMPARE_NOTE = (
     "算不符（分類記「詞數不同」）。"
     "單引號(喉塞音)也**不忽略**:排灣語 ODS 1-3 明定詞素切割的 "
     "`[k]` / `[ʔ]` 要跟著族語原句的寫法。"
-    "阿美語的 `^` 是《原住民族語言書寫系統》的喉塞音字母，同樣**不忽略**。"
+    "阿美語的 `^` 是《原住民族語言書寫系統》的喉塞音字母，同樣**不忽略**；"
+    "阿美語的長音 `:` 也要兩行一致。"
+    "泰雅、太魯閣、賽德克的詞素切割常寫完整形，只差 1 到 3 個字母、"
+    "長度差很多的算通過。"
 )
 
 
@@ -65,7 +67,6 @@ def collect(base, log, judgements=None):
         judgements = {}
     files = []
     issues = []
-    mismatch = OrderedDict()
     proof = Proof([])
     book = proofreading.IdBook()
     for root, dirs, names in os.walk(base):
@@ -81,10 +82,6 @@ def collect(base, log, judgements=None):
             judge(corpus.issues, None)
             for entry in corpus.entries:
                 judge(entry.issues, entry)
-                for issue in entry.issues:
-                    # 這一項是解析階段就掠著的,袂經過 validate。
-                    if issue.kind is IssueKind.SOURCE_SEGMENT_MISMATCH:
-                        _note_mismatch(mismatch, rel, entry, issue)
                 if not entry.is_clean():
                     continue
                 found = validate(entry)
@@ -92,7 +89,7 @@ def collect(base, log, judgements=None):
                 for issue in found:
                     entry.issues.append(issue)
             files.append(corpus)
-    return files, issues, mismatch, proof
+    return files, issues, proof
 
 
 class Judge:
@@ -125,20 +122,8 @@ class Judge:
             self.corpus.ethnic, self.corpus.variant, issue, entry)
 
 
-def _note_mismatch(mismatch, rel, entry, issue):
-    """把「族語原句與詞素切割不符」照細分類型收起來。"""
-    kind = issue.detail.split(":", 1)[0]
-    mismatch.setdefault(kind, []).append(
-        (rel, entry.number, entry.source, entry.segmentation, issue.detail))
-
-
-MISMATCH_PREFIX = IssueKind.SOURCE_SEGMENT_MISMATCH.value + "-"
-
-
 def why_of(label):
     """報告顯示的問題名稱 → 說明。"""
-    if label.startswith(MISMATCH_PREFIX):
-        return MISMATCH_WHY.get(label[len(MISMATCH_PREFIX):], "")
     for kind in IssueKind:
         if kind.value == label:
             return KIND_WHY.get(kind, "")
@@ -165,7 +150,7 @@ def entry_total(files):
 
 def overview(files, issues, exported_files, exported_segments):
     total = entry_total(files)
-    errors, exported, warnings, notices = report.severity_split(issues)
+    split = report.severity_split(issues)
     lines = [report.heading("總覽"), ""]
     lines.append("- 語料檔案:" + str(len(files)) + " 個")
     lines.append("- 語料段數:" + str(total) + " 段")
@@ -178,10 +163,11 @@ def overview(files, issues, exported_files, exported_segments):
         " 段(" + ("%.1f" % rate) + "%)，分布在 " +
         str(exported_files) + " 個檔案"
     )
-    lines.append("- 錯誤（不匯出）:" + str(len(errors)) + " 筆")
-    lines.append("- 錯誤（照常匯出）:" + str(len(exported)) + " 筆")
-    lines.append("- 警告（照常匯出）:" + str(len(warnings)) + " 筆")
-    lines.append("- 現象:" + str(len(notices)) + " 筆")
+    for severity, found in split.items():
+        name = severity.value
+        if severity is Severity.ERROR:
+            name = "錯誤（不匯出）"
+        lines.append("- " + name + ":" + str(len(found)) + " 筆")
     lines.append("")
     lines.append(SEVERITY_NOTE)
     lines.append("")
@@ -201,6 +187,7 @@ SEVERITY_ROWS = [
     ("錯誤", "不匯出", "舉例", "要"),
     ("錯誤（照常匯出）", "匯出", "舉例", "要"),
     ("警告（照常匯出）", "匯出", "舉例", "不要"),
+    ("不確定，待檢查", "不匯出", "舉例", "要"),
     ("現象", "不匯出", "舉例", "不要"),
 ]
 
@@ -227,46 +214,6 @@ def variant_rows(files):
     return out
 
 
-DISCUSS_INTRO = (
-    "下面三種符號現在**不算錯誤**，也照常匯出，要跟承辦討論:保留，"
-    "還是提示要改。每種列最多 " + str(report.DISCUSS_LIMIT) + " 段，"
-    "在語言別、檔案之間輪流挑。規格見 `features/詞素切割標點.feature`。"
-)
-
-# 待討論章的三節:(entry.discuss 的名稱, 小節名稱, 說明)。
-DISCUSS_PARTS = [
-    (DISCUSS_PLUS, "`+`",
-     "例如泰雅的 `la+ga`、`yan+ka`，詞素翻譯也用 `+`(`助詞+助詞`)，"
-     "看起來是表示縮約。《原住民族語言書寫系統》沒有這個符號。"),
-    (DISCUSS_DOT, "詞中間的 `.`",
-     "前後都緊接字母的 `.`，例如 `i.maza`、`kiya.ga`，看起來是把兩個詞"
-     "連寫。書寫系統只有邵語用 `.` 區辨字母。詞頭、詞尾的 `.` 照樣算"
-     "「詞素切割有標點」。"),
-    (DISCUSS_SPEAKER, "說話者標記",
-     "整個詞是 1 到 3 個字母加冒號，例如 `G:`、`Lj:`、`Yu:`。跟"
-     "「對話組」是同一個現象。黏在詞前面的(`Yu:m-uwah`)當成一般的"
-     "族語詞，冒號照樣算「詞素切割有標點」。"),
-]
-
-
-def discuss_chapter(files):
-    """待討論:詞素切割的特殊符號。"""
-    parts = []
-    for name, label, why in DISCUSS_PARTS:
-        rows = []
-        for corpus in files:
-            for entry in corpus.entries:
-                count = entry.discuss.get(name, 0)
-                if count:
-                    rows.append(report.DiscussRow(
-                        corpus.ethnic, corpus.variant, corpus.path,
-                        entry.number, entry.source, entry.segmentation,
-                        count))
-        parts.append((label, why, rows))
-    return report.discuss_section(
-        "待討論：詞素切割的特殊符號", DISCUSS_INTRO, parts)
-
-
 def proofreading_section(problems):
     """校對流程:給業務單位看校對表在哪裡、怎麼填、怎麼交回。
 
@@ -281,7 +228,8 @@ def proofreading_section(problems):
         "（例如 `ISSUE-3f9a2c1b`），對得到校對表的同一列。")
     lines.append("")
     lines.append(
-        "校對表只列需要老師校對的問題（嚴重度是「錯誤」與「錯誤（照常匯出）」），"
+        "校對表只列需要老師校對的問題（嚴重度是「錯誤」「錯誤（照常匯出）」"
+        "「不確定，待檢查」），"
         "一筆問題一列，列出問題、程式的提示與四行語料，程式認為有"
         "問題的地方標成紅色粗體。請族語老師在「判斷」欄的下拉選單選一個:")
     lines.append("")
@@ -316,8 +264,7 @@ def run(base, proof_dir=PROOF_DIR, out_dir=report.OUT_DIR):
     sheet_dir = os.path.join(out_dir, "校對表")
     log = NormLog()
     readback = proofreading.read_judgements(proof_dir)
-    files, issues, mismatch, proof = collect(
-        base, log, readback.judgements)
+    files, issues, proof = collect(base, log, readback.judgements)
     yaml_path, yaml_files, yaml_segments = yamlout.write(
         files, out_dir=out_dir)
     proofreading.write_sheets(sheet_dir, proof.rows, readback.judgements)
@@ -337,10 +284,9 @@ def run(base, proof_dir=PROOF_DIR, out_dir=report.OUT_DIR):
         report.format_section(files),
         report.norm_section(log, COMPARE_NOTE),
         kinds_section(issues),
-        discuss_chapter(files),
     ]
     path = report.write(REPORT_NAME, sections, out_dir)
-    errors, exported, warnings, notices = report.severity_split(issues)
+    errors = report.severity_split(issues)[Severity.ERROR]
     return path, yaml_path, len(errors)
 
 

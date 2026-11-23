@@ -17,7 +17,9 @@ from scripts.smkul.parser import (
     bare_form,
     build_entry,
     check_segment_punctuation,
+    compare_source,
     normalize_en_dash,
+    normalize_line,
     parse_text,
     parse_timecode,
     timecode_parts,
@@ -54,6 +56,23 @@ class TestNormalize(unittest.TestCase):
         got = normalize_en_dash("PI-書-處焦", log, "a.txt", "79")
         self.assertEqual(got, "PI-書-處焦")
         self.assertEqual(log.records[NormKind.EN_DASH].count, 0)
+
+    def test_引號轉成_u02bc_才計數(self):
+        log = NormLog()
+        got = normalize_line("mi-do’do to i loma'", log, "a.txt", "1")
+        self.assertEqual(got, "mi-doʼdo to i lomaʼ")
+        self.assertEqual(log.records[NormKind.APOSTROPHE].count, 1)
+
+    def test_只有引用符號_沒轉就不計數(self):
+        log = NormLog()
+        got = normalize_line('"Bikuy \' sun mu.', log, "a.txt", "143")
+        self.assertEqual(got, '"Bikuy \' sun mu.')
+        self.assertEqual(log.records[NormKind.APOSTROPHE].count, 0)
+
+    def test_已經是_u02bc_不計數(self):
+        log = NormLog()
+        normalize_line("lomaʼ", log, "a.txt", "1")
+        self.assertEqual(log.records[NormKind.APOSTROPHE].count, 0)
 
 
 class TestSplitEntries(unittest.TestCase):
@@ -95,6 +114,96 @@ class TestSplitEntries(unittest.TestCase):
             for line in entry.body:
                 self.assertNotIn("＝", line)
         self.assertTrue(log.records[NormKind.FULLWIDTH_EQUALS].count >= 1)
+
+
+def speakers(*lines, number="114", time="0:09:55.806,0:09:58.812"):
+    """一段語料的全文:編號、時間碼、內文。"""
+    return number + ".\n" + time + "\n" + "\n".join(lines) + "\n"
+
+
+class TestSpeakers(unittest.TestCase):
+    """兩位說話者照說話者切段。feature 有對話段、兩位發音人與組數對不起來
+    各一例,這裡補 feature 沒有的邊界。例子都是南排灣 4_張枝妹。"""
+
+    def numbers(self, text):
+        out = []
+        for entry in parse_text(text, path="t.docx").entries:
+            out.append(entry.number)
+        return out
+
+    def test_族語原句與華語翻譯有說話者標記_照標記切(self):
+        # 第 151 段。
+        corpus = parse_text(speakers(
+            "K: tu sikuda azua? Lj: ʼu qentj-an== e 漫畫",
+            "K: tu si-kuda azua?",
+            "K: 補語連詞 參焦.工具-如何 斜格.那",
+            "Lj: ʼu=qentj-an e 漫畫",
+            "Lj: 我.屬格=看-AN 填補詞 漫畫",
+            "(那是做什麼的?) 我拿來看啊...漫畫",
+        ), path="t.docx")
+        bodies = []
+        for entry in corpus.entries:
+            bodies.append(entry.body[0])
+        self.assertEqual(
+            bodies, ["K: tu sikuda azua?", "Lj: ʼu qentj-an== e 漫畫"])
+
+    def test_換手兩次以上_切更多段(self):
+        # 第 23 段:K → Lj → K → Lj。原本的華語翻譯
+        # 「(你母親?) 叫laus, 也是一樣patalaq家」少了 K 第二句的翻譯,
+        # 切不成四份;這裡補上「(laus?)」,只測換手兩次的切法。
+        text = speakers(
+            "(a su kina? ) ti laus== (laus? ) ui a patalaq== mamaw.",
+            "K: a su=kina", "K: 你.屬格=媽媽",
+            "Lj: ti laus", "Lj: 主格 人名",
+            "K: laus", "K: 人名",
+            "Lj: ui a patalaq mamaw", "Lj: 是 連繫詞 家名 一樣",
+            "(你母親?) 叫laus (laus?) 也是一樣patalaq家",
+            number="23")
+        self.assertEqual(self.numbers(text), ["23-1", "23-2", "23-3", "23-4"])
+
+    def test_華語翻譯少一份_整段不切(self):
+        # 第 23 段原本的華語翻譯。
+        text = speakers(
+            "(a su kina? ) ti laus== (laus? ) ui a patalaq== mamaw.",
+            "K: a su=kina", "K: 你.屬格=媽媽",
+            "Lj: ti laus", "Lj: 主格 人名",
+            "K: laus", "K: 人名",
+            "Lj: ui a patalaq mamaw", "Lj: 是 連繫詞 家名 一樣",
+            "(你母親?) 叫laus, 也是一樣patalaq家",
+            number="23")
+        self.assertEqual(self.numbers(text), ["23"])
+
+    def test_同一組寫了兩次_標記也重複_不切(self):
+        # 第 169 段:族語原句的標記是 Lj: Lj: K: K:,跟分組的順序對不起來。
+        text = speakers(
+            "Lj: Lj: a sema  inu? K: K: a sema  gade== a== tima?",
+            "Lj: a s<em>a inu", "Lj: 主格 <主焦>去 哪",
+            "K: a s<em>a gade a tima", "K: 主格 <主焦>去 山 填補詞 誰",
+            "Lj: a s<em>a inu", "Lj: 主格 <主焦>去 哪",
+            "K: a s<em>a gade a tima", "K: 主格 <主焦>去 山 填補詞 誰",
+            "去哪裡? (比如去山上...是誰教妳的? )",
+            number="169")
+        self.assertEqual(self.numbers(text), ["169"])
+
+    def test_只有一位說話者_不切(self):
+        text = speakers(
+            "A: na mahau i tama tina)", "A: na=mahau' i tama tina",
+            "A: 非實現=主焦.罵 斜格 父親 母親", "爸媽會罵", number="12")
+        self.assertEqual(self.numbers(text), ["12"])
+
+    def test_時間碼的問題留在第一段(self):
+        text = speakers(
+            "(anema?) 電土", "K: anema", "K: 什麼", "Lj: 電土", "Lj: 電土",
+            "(那是什麼?) 電土", time="0:09:58.812,0:09:55.806")
+        corpus = parse_text(text, path="t.docx")
+        kinds = []
+        for entry in corpus.entries:
+            found = []
+            for issue in entry.issues:
+                found.append((issue.kind, issue.number))
+            kinds.append(found)
+        self.assertEqual(kinds, [
+            [(IssueKind.REVERSED_TIMECODE, "114-1")], []])
 
 
 class TestAssemble(unittest.TestCase):
@@ -164,9 +273,54 @@ class TestSourceSegmentation(unittest.TestCase):
         self.assertEqual(bare_form("pa^tang"), "pa^tang")
 
     def test_bare_form_去掉書寫系統的符號(self):
-        # 阿美語的長音 :、泰雅語的 _ 是符號，不是字母。
+        # 阿美語以外的 :、泰雅語的 _ 是符號，不是字母。
         self.assertEqual(bare_form("iti:raw"), "itiraw")
         self.assertEqual(bare_form("m_yan"), "myan")
+
+    def test_bare_form_u02bc_也是喉塞音(self):
+        self.assertEqual(bare_form("ʼana neʼa"), "'anane'a")
+
+
+class TestCompareSource(unittest.TestCase):
+    """族語原句詞素切割比對 feature 沒有例子的邊界。"""
+
+    def test_沒給族別_泰雅語群的放寬不套用(self):
+        got = compare_source("Shngiun da.", "shungi-un da")
+        self.assertFalse(got.passed)
+        self.assertEqual(got.kind, "只差一個字母")
+
+    def test_沒給族別_加號不能接詞(self):
+        got = compare_source("la ga", "la+ga")
+        self.assertEqual(got.kind, "詞數不同")
+
+    def test_泰雅語群也不放寬單引號(self):
+        got = compare_source("haan", "ha'an", "太魯閣")
+        self.assertEqual(got.kind, "只差單引號")
+
+    def test_阿美語詞素切割少了長音(self):
+        got = compare_source("Raka:t sa haw", "Rakat sa haw", "阿美")
+        self.assertEqual(got.kind, "只差長音符號")
+        self.assertEqual(got.detail, "詞素切割少了「:」")
+
+    def test_阿美語以外的長音不比(self):
+        self.assertTrue(compare_source("Raka:t sa", "Rakat sa", "排灣").passed)
+
+    def test_阿美語句讀的冒號不算長音(self):
+        self.assertTrue(
+            compare_source("sowal sa: pina kiya", "sowal sa pina kiya",
+                           "阿美").passed)
+
+    def test_長音之外還差字母_照原本的分類(self):
+        got = compare_source("Raka:t sa", "Rakot sa", "阿美")
+        self.assertEqual(got.kind, "只差一個字母")
+
+    def test_族語和華語不一致_詞數不一樣就不判(self):
+        got = compare_source("awaay to no moyi", "awa-ay=to no 母語")
+        self.assertNotEqual(got.kind, "族語和華語不一致")
+
+    def test_拉長音最先判(self):
+        got = compare_source("lja tutang", "lja== tutang 母語")
+        self.assertEqual(got.kind, "詞素切割有拉長音")
 
 
 class TestClassify(unittest.TestCase):
@@ -188,9 +342,8 @@ class TestClassify(unittest.TestCase):
         self.assertIn(IssueKind.EMPTY_ENTRY, got[0][1])
         # 第 2 段是正常的段,但族語原句 `O na` 詞素切割寫成 `Ona`,
         # 詞數對不起來——照族語原句詞素切割比對.feature「只差空白，
-        # 先算不通過」那條,這算「族語原句與詞素切割不符」。
-        self.assertEqual(
-            got[1][1], [IssueKind.SOURCE_SEGMENT_MISMATCH])
+        # 先算不通過」那條,這算「族語原句與詞素切割不符-詞數不同」。
+        self.assertEqual(got[1][1], [IssueKind.MISMATCH_WORDS])
 
     def test_孤兒時間碼(self):
         got = self.kinds_of("病態_孤兒時間碼.txt")
@@ -281,10 +434,13 @@ class TestSegmentPunctuation(unittest.TestCase):
             "因為詞素切割不能有標點，應該寫是 `azua`",
         )
 
+    def test_全形小老鼠是笑聲_不算標點(self):
+        self.assertEqual(self.hint("pa-'a-pazangal ＠", "排灣"), "")
+
     def test_只有符號的詞_整個詞刪掉_寫整行(self):
         self.assertEqual(
-            self.hint("pa-'a-pazangal ＠", "排灣"),
-            "詞素切割第 2 個詞的 `＠` 有符號 `＠`，程式判斷要整個詞刪掉，"
+            self.hint("pa-'a-pazangal |", "排灣"),
+            "詞素切割第 2 個詞的 `|` 有符號 `|`，程式判斷要整個詞刪掉，"
             "因為詞素切割不能有標點，應該寫是 `pa-'a-pazangal`",
         )
 
@@ -321,44 +477,59 @@ class TestSegmentPunctuation(unittest.TestCase):
         self.assertEqual(self.hint("put.huum", "邵"), "")
         self.assertEqual(self.hint("lamo:", "賽夏"), "")
 
-    def test_加號_不算標點_列入待討論(self):
+    def test_泰雅語的加號不算標點(self):
         result = check_segment_punctuation("la+ga yan+ka", "泰雅")
         self.assertEqual(result.hint, "")
-        self.assertEqual(result.discuss["+"], 2)
+        self.assertEqual(dict(result.findings), {})
 
-    def test_詞中間的點_列入待討論(self):
+    def test_泰雅語以外的加號_建議改成點(self):
+        result = check_segment_punctuation("qani la+ga", "太魯閣")
+        self.assertEqual(list(result.findings), [IssueKind.SEGMENT_PLUS])
+        self.assertEqual(
+            result.hint,
+            "詞素切割第 2 個詞的 `la+ga` 有標點 `+`，程式判斷要改成 `.`，"
+            "因為只有泰雅語可以用 + 標示詞組，應該寫是 `la.ga`",
+        )
+
+    def test_詞中間的點不算標點(self):
         result = check_segment_punctuation("kika kiya.ga", "太魯閣")
         self.assertEqual(result.hint, "")
-        self.assertEqual(result.discuss["詞中間的 ."], 1)
 
     def test_詞頭的點仍算標點(self):
         result = check_segment_punctuation("nanu.yasa .qu", "泰雅")
+        self.assertEqual(
+            list(result.findings), [IssueKind.SEGMENT_PUNCTUATION])
         self.assertIn("`.qu` 有標點 `.`", result.hint)
-        self.assertEqual(result.discuss["詞中間的 ."], 1)
+        self.assertNotIn("nanu.yasa", result.hint)
 
-    def test_獨立的說話者標記_列入待討論(self):
+    def test_獨立的說話者標記不算標點(self):
         result = check_segment_punctuation(
             "K: anema ta azua? Lj: 電土", "排灣")
-        self.assertEqual(result.discuss["說話者標記"], 2)
         self.assertEqual(
             result.hint,
             "詞素切割第 4 個詞的 `azua?` 有標點 `?`，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `azua`",
         )
 
-    def test_黏著的說話者標記_當一般族語詞(self):
+    def test_泰雅語第一個詞的冒號_另一種問題(self):
         result = check_segment_punctuation("Yu:m-uwah kekong", "泰雅")
-        self.assertNotIn("說話者標記", result.discuss)
+        self.assertEqual(
+            list(result.findings), [IssueKind.SEGMENT_SPEAKER_COLON])
         self.assertEqual(
             result.hint,
             "詞素切割第 1 個詞的 `Yu:m-uwah` 有標點 `:`，程式判斷要刪掉，"
             "因為詞素切割不能有標點，應該寫是 `Yum-uwah`",
         )
 
+    def test_泰雅語不是第一個詞的冒號_是一般標點(self):
+        result = check_segment_punctuation("yan=sami Yu:qani ga", "泰雅")
+        self.assertEqual(
+            list(result.findings), [IssueKind.SEGMENT_PUNCTUATION])
+
     def test_沒有標點(self):
         result = check_segment_punctuation("masa-maan i to", "阿美")
         self.assertEqual(result.hint, "")
-        self.assertEqual(result.discuss, {})
+        self.assertEqual(dict(result.findings), {})
 
     def test_一段只記一筆_照常匯出(self):
         entry = segment_entry("aji. uri. o brah", "Aji uri o brah", "太魯閣")
@@ -371,9 +542,14 @@ class TestSegmentPunctuation(unittest.TestCase):
         self.assertIn("`uri.`", found[0].detail)
         self.assertTrue(entry.is_clean())
 
-    def test_待討論的標記存在段上(self):
-        entry = segment_entry("la+ga kiya.ga", ethnic="泰雅")
-        self.assertEqual(entry.discuss, {"+": 1, "詞中間的 .": 1})
+    def test_同一段兩種標點問題_各記一筆(self):
+        entry = segment_entry("kiya. yan+ka", "kiya yaka", "太魯閣")
+        kinds = []
+        for issue in entry.issues:
+            kinds.append(issue.kind)
+        self.assertIn(IssueKind.SEGMENT_PUNCTUATION, kinds)
+        self.assertIn(IssueKind.SEGMENT_PLUS, kinds)
+        self.assertFalse(entry.is_clean())
 
     def test_純華語句不檢查(self):
         entry = segment_entry("好，這個時候", ethnic="排灣")

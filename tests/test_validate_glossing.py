@@ -9,10 +9,10 @@ from tests import DATA
 
 from scripts import validate_glossing
 from scripts.smkul import proofreading, report
-from scripts.smkul.entry import Issue, IssueKind, NormLog
+from scripts.smkul.entry import Issue, IssueKind, NormLog, is_mismatch
 
-# 「組」改稱「段」。重組、分組、組成、組裝是動詞，不算。
-OLD_UNIT = r"(?<![重分])組(?![成裝合起])"
+# 「組」改稱「段」。重組、分組、組成、組裝是動詞，詞組是另一個詞，不算。
+OLD_UNIT = r"(?<![重分詞])組(?![成裝合起])"
 
 
 class TestNoMorphology(unittest.TestCase):
@@ -53,11 +53,14 @@ class TestSegmentPunctuation(unittest.TestCase):
             Issue(IssueKind.MIXED_TIMECODE_FORMAT, "a.docx"),
         ]
 
-    def test_總覽分四級(self):
+    def test_總覽分五級(self):
         got = validate_glossing.overview([], self.issues(), 0, 0)
         self.assertIn("- 錯誤（不匯出）:0 筆", got)
         self.assertIn("- 錯誤（照常匯出）:1 筆", got)
         self.assertIn("- 警告（照常匯出）:1 筆", got)
+        self.assertIn("- 不確定，待檢查:0 筆", got)
+        self.assertIn("- 現象:0 筆", got)
+        self.assertLess(got.index("- 警告"), got.index("- 不確定"))
         self.assertNotIn("warning", got)
 
     def test_沒有標點不同(self):
@@ -67,11 +70,8 @@ class TestSegmentPunctuation(unittest.TestCase):
         self.assertNotIn("句讀慣例", got)
         self.assertNotIn("warning", got)
 
-    def test_待討論章有三節(self):
-        got = validate_glossing.discuss_chapter([])
-        self.assertIn("待討論：詞素切割的特殊符號", got)
-        for label in ("`+`", "詞中間的 `.`", "說話者標記"):
-            self.assertIn(label, got)
+    def test_沒有待討論章(self):
+        self.assertFalse(hasattr(validate_glossing, "discuss_chapter"))
 
 
 class TestOverview(unittest.TestCase):
@@ -86,6 +86,7 @@ class TestOverview(unittest.TestCase):
         got = validate_glossing.overview([], [], 0, 0)
         self.assertIn("| 嚴重度 | 翻譯訓練YAML | 報告舉例 | 請老師校對 |", got)
         self.assertIn("| 錯誤（照常匯出） | 匯出 | 舉例 | 要 |", got)
+        self.assertIn("| 不確定，待檢查 | 不匯出 | 舉例 | 要 |", got)
         self.assertIn("| 現象 | 不匯出 | 舉例 | 不要 |", got)
 
     def test_第7章的順序跟問題表一樣(self):
@@ -93,8 +94,8 @@ class TestOverview(unittest.TestCase):
             Issue(IssueKind.CHINESE_ONLY, "a.docx", "1"),
             Issue(IssueKind.CHINESE_ONLY, "a.docx", "2"),
             Issue(IssueKind.GLUED_LINE, "a.docx", "3"),
-            Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, "a.docx", "4",
-                  "詞數不同:"),
+            Issue(IssueKind.MISMATCH_WORDS, "a.docx", "4"),
+            Issue(IssueKind.MISMATCH_ONE, "a.docx", "5", "「l」→「r」"),
         ]
         got = validate_glossing.kinds_section(issues)
         titles = []
@@ -120,9 +121,9 @@ class TestProofreading(unittest.TestCase):
         return validate_glossing.collect(self.base, NormLog(), judgements)
 
     def mismatch_id(self):
-        files, issues, mismatch, proof = self.collect()
+        files, issues, proof = self.collect()
         for issue in issues:
-            if issue.kind is IssueKind.SOURCE_SEGMENT_MISMATCH:
+            if is_mismatch(issue.kind):
                 return issue.id
         self.fail("最小範例第 25 段應該有族語原句與詞素切割不符")
 
@@ -132,7 +133,7 @@ class TestProofreading(unittest.TestCase):
             issue_id, judgement, "備註", {}, "校對.xlsx", 2, 0)}
 
     def test_每筆問題都有_id(self):
-        files, issues, mismatch, proof = self.collect()
+        files, issues, proof = self.collect()
         self.assertTrue(issues)
         for issue in issues:
             self.assertRegex(issue.id, r"^ISSUE-[0-9a-f]{8}$")
@@ -140,7 +141,7 @@ class TestProofreading(unittest.TestCase):
 
     def test_程式判斷錯的不算問題_段照常匯出(self):
         issue_id, judgements = self.judged(proofreading.PROGRAM_WRONG)
-        files, issues, mismatch, proof = self.collect(judgements)
+        files, issues, proof = self.collect(judgements)
         for issue in issues:
             self.assertNotEqual(issue.id, issue_id)
         # 老師確認過的問題只留在校對表,報告不另外列(proofreading spec)。
@@ -153,7 +154,7 @@ class TestProofreading(unittest.TestCase):
 
     def test_要討論的照常算_另外收起來(self):
         issue_id, judgements = self.judged(proofreading.DISCUSS)
-        files, issues, mismatch, proof = self.collect(judgements)
+        files, issues, proof = self.collect(judgements)
         ids = []
         for issue in issues:
             ids.append(issue.id)
@@ -204,8 +205,8 @@ class TestChapters(unittest.TestCase):
         self.assertEqual(titles, [
             "總覽", "依語言別統計", "翻譯訓練YAML 輸出", "校對流程",
             "語料格式說明", "自動處理與比對政策", "問題類型說明與例子",
-            "待討論：詞素切割的特殊符號",
         ])
+        self.assertNotIn("待討論：詞素切割的特殊符號", got)
         self.assertNotIn("標記清單", got)
         self.assertEqual(names, ["Glossing驗證報告.md", "corpus.yaml", "校對表"])
 

@@ -6,7 +6,8 @@
 
 from behave import then, when
 
-from scripts.smkul.rules import check_correspondence
+from scripts.smkul.entry import Issue
+from scripts.smkul.rules import CORRESPONDENCE_KIND, check_correspondence
 
 
 @when('詞素切割行是 "{segmentation}"，詞素翻譯行是 "{gloss}"')
@@ -15,6 +16,10 @@ def step_對應(context, segmentation, gloss):
     context.gloss = gloss
     found = check_correspondence(segmentation, gloss)
     context.kind, context.left, context.right = found
+    context.issues = []
+    if context.kind is not None:
+        context.issues.append(
+            Issue(CORRESPONDENCE_KIND[context.kind], "feature", "1"))
 
 
 @then("對應通過")

@@ -13,6 +13,7 @@ from scripts.smkul.entry import (
     NormKind,
     NormLog,
     Severity,
+    id_group,
 )
 
 FEATURES = os.path.join(
@@ -57,11 +58,29 @@ class TestIssue(unittest.TestCase):
         self.assertIs(issue.severity, Severity.EXPORTED_ERROR)
         self.assertFalse(issue.is_error())
 
-    def test_四級嚴重度的名稱(self):
-        self.assertEqual(Severity.ERROR.value, "錯誤")
-        self.assertEqual(Severity.EXPORTED_ERROR.value, "錯誤（照常匯出）")
-        self.assertEqual(Severity.WARNING.value, "警告（照常匯出）")
-        self.assertEqual(Severity.NOTICE.value, "現象")
+    def test_五級嚴重度的名稱與順序(self):
+        names = []
+        for severity in Severity:
+            names.append(severity.value)
+        self.assertEqual(names, [
+            "錯誤", "錯誤（照常匯出）", "警告（照常匯出）", "不確定，待檢查",
+            "現象"])
+
+    def test_不確定待檢查_不匯出_不影響_exit_code(self):
+        issue = Issue(IssueKind.MISMATCH_ONE, "a.txt", "62")
+        self.assertIs(issue.severity, Severity.UNSURE)
+        self.assertFalse(issue.is_error())
+        entry = Entry("62", "", "", issues=[issue])
+        self.assertFalse(entry.is_clean())
+
+    def test_拆出來的小類_id_用大類(self):
+        self.assertEqual(id_group(IssueKind.MISMATCH_ONE), "族語原句與詞素切割不符")
+        self.assertEqual(
+            id_group(IssueKind.MISMATCH_LANGUAGE), "族語原句與詞素切割不符")
+        self.assertEqual(
+            id_group(IssueKind.SEGMENT_SPEAKER_COLON), "詞素切割有標點")
+        self.assertEqual(id_group(IssueKind.SEGMENT_PLUS), "詞素切割有標點")
+        self.assertEqual(id_group(IssueKind.GLUED_LINE), "行黏在一起")
 
     def test_沒有標點不同這一類(self):
         names = []
@@ -91,7 +110,7 @@ class TestKindNames(unittest.TestCase):
         self.assertEqual(IssueKind.MISSING_TRANSLATION.value, "缺華語翻譯行")
         self.assertEqual(IssueKind.EMPTY_ENTRY.value, "空段")
         self.assertEqual(
-            IssueKind.SOURCE_SEGMENT_MISMATCH.value, "族語原句與詞素切割不符")
+            IssueKind.MISMATCH_WORDS.value, "族語原句與詞素切割不符-詞數不同")
         # 「段數不同」是 docx／txt 比對的分類，隨 docx-txt-consistency 刪掉。
         names = []
         for kind in IssueKind:

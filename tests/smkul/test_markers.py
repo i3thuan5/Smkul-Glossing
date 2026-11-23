@@ -7,6 +7,7 @@ from tests import ODS
 from scripts.smkul.markers import (
     SHEET_OF,
     affix_position,
+    is_uncertain,
     load_marker_lists,
     marker_from_gloss,
     read_sheets,
@@ -36,6 +37,14 @@ class TestSplit(unittest.TestCase):
 
     def test_有空白的不算單一標記(self):
         self.assertEqual(split_gloss("如果 沒有 言談標記"), [])
+
+
+class TestUncertain(unittest.TestCase):
+
+    def test_喉塞音開頭的不確定標記_各種引號都認得(self):
+        for gloss in ("'I", "ʼI", "’A", "AN"):
+            self.assertTrue(is_uncertain(gloss), gloss)
+        self.assertFalse(is_uncertain("主焦"))
 
 
 class TestAffixPosition(unittest.TestCase):

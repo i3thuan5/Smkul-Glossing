@@ -48,9 +48,26 @@ class TestIssueId(unittest.TestCase):
                             self.assign(punctuation(), changed))
 
     def test_同一段不同問題種類_id_不同(self):
-        other = Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, PATH, "12",
-                      "只差一個字母:詞素切割多了「a」")
+        other = Issue(IssueKind.MISMATCH_ONE, PATH, "12", "詞素切割多了「a」")
         self.assertNotEqual(self.assign(punctuation()), self.assign(other))
+
+    def test_不符的小類換了_id_不變(self):
+        # 2026.11 拆小類以前,ID 用的是大類名稱;小類改判也不變。
+        one = Issue(IssueKind.MISMATCH_ONE, PATH, "12", "差異")
+        many = Issue(IssueKind.MISMATCH_LANGUAGE, PATH, "12", "差異")
+        self.assertEqual(self.assign(one), self.assign(many))
+
+    def test_拆出來的標點問題_id_跟詞素切割有標點一樣(self):
+        colon = Issue(IssueKind.SEGMENT_SPEAKER_COLON, PATH, "12", "提示")
+        self.assertEqual(self.assign(colon), self.assign(punctuation()))
+
+    def test_引號統一成_u02bc_id_不變(self):
+        # 2026.11 以前的正規化把引號轉成 U+0027,BODY 就是那時的內容。
+        glottal = []
+        for line in BODY:
+            glottal.append(line.replace("'", "ʼ"))
+        self.assertEqual(self.assign(punctuation()),
+                         self.assign(punctuation(), glottal))
 
     def test_沒有段編號的問題也有_id(self):
         first = Issue(IssueKind.ORPHAN_TIMECODE, PATH, "", "孤兒",
@@ -168,8 +185,8 @@ class TestApply(unittest.TestCase):
 
     def entry(self):
         entry = Entry("12", "0", "1", path=PATH)
-        mismatch = Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, PATH, "12",
-                         "只差一個字母:詞素切割多了「a」")
+        mismatch = Issue(IssueKind.MISMATCH_ONE, PATH, "12",
+                         "詞素切割多了「a」")
         mismatch.id = "ISSUE-00000001"
         punct = punctuation()
         punct.id = "ISSUE-00000002"
@@ -247,8 +264,7 @@ class TestMarks(unittest.TestCase):
     def test_標出不一樣的字母(self):
         entry = make_entry(AMIS, "62", "caay katama masa mahatila",
                            "caay ka-tama masa ma-ha-tira")
-        issue = Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, AMIS, "62",
-                      "只差一個字母:「l」→「r」")
+        issue = Issue(IssueKind.MISMATCH_ONE, AMIS, "62", "「l」→「r」")
         got = proofreading.marked_cells(issue, entry, "阿美")
         self.assertEqual(got["族語原句"], [
             ("caay katama masa mahati", False), ("l", True), ("a", False)])
@@ -274,13 +290,14 @@ class TestWriteSheets(unittest.TestCase):
         out = []
         cases = [
             (TAROKO, "10", IssueKind.SEGMENT_PUNCTUATION, "太魯閣", "太魯閣"),
-            (TAROKO, "9", IssueKind.SOURCE_SEGMENT_MISMATCH, "太魯閣",
-             "太魯閣"),
+            (TAROKO, "9", IssueKind.MISMATCH_MANY, "太魯閣", "太魯閣"),
             (TAROKO, "9", IssueKind.CHINESE_ONLY, "太魯閣", "太魯閣"),
             (AMIS, "26", IssueKind.REVERSED_TIMECODE, "阿美", "秀姑巒"),
             (AMIS, "27", IssueKind.GLUED_LINE, "阿美", "秀姑巒"),
             (AMIS, "1", IssueKind.EMPTY_ENTRY, "阿美", "秀姑巒"),
             (AMIS, "", IssueKind.ORPHAN_TIMECODE, "阿美", "秀姑巒"),
+            (TAROKO, "9-2", IssueKind.MISMATCH_ONE, "太魯閣", "太魯閣"),
+            (TAROKO, "9-1", IssueKind.GLUED_LINE, "太魯閣", "太魯閣"),
         ]
         for index, (path, number, kind, ethnic, variant) in enumerate(cases):
             issue = Issue(kind, path, number, "提示" + str(index))
@@ -305,8 +322,9 @@ class TestWriteSheets(unittest.TestCase):
         numbers = []
         for row in rows[1:]:
             numbers.append(row[2])
-        # 第 9 段的純華語句是現象，不列入校對表。
-        self.assertEqual(numbers, ["9", "10"])
+        # 第 9 段的純華語句是現象，不列入校對表。切開的 9-1、9-2 排在
+        # 9 與 10 中間;9-2 是「不確定，待檢查」,要列入。
+        self.assertEqual(numbers, ["9", "9-1", "9-2", "10"])
         first = dict(zip(proofreading.HEADERS, rows[1]))
         self.assertEqual(first["檔案"], TAROKO)
         self.assertEqual(first["族語原句"], "iq kiya")

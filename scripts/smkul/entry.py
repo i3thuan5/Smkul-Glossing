@@ -9,13 +9,21 @@ from scripts.smkul import languages
 class Severity(enum.Enum):
     """問題的嚴重度。ERROR 會影響 exit code，其他不會。
 
-    ERROR 與 NOTICE 不匯出；EXPORTED_ERROR 與 WARNING 照常匯出。
+    ERROR、UNSURE、NOTICE 不匯出；EXPORTED_ERROR 與 WARNING 照常匯出。
+    宣告的順序就是報告總覽列筆數的順序。
     """
 
     ERROR = "錯誤"
     EXPORTED_ERROR = "錯誤（照常匯出）"
     WARNING = "警告（照常匯出）"
+    UNSURE = "不確定，待檢查"
     NOTICE = "現象"
+
+
+# 「族語原句與詞素切割不符」的大類名稱。9 個小類各是一種問題,
+# 名稱是「大類-小類」。
+MISMATCH = "族語原句與詞素切割不符"
+MISMATCH_PREFIX = MISMATCH + "-"
 
 
 class IssueKind(enum.Enum):
@@ -31,15 +39,30 @@ class IssueKind(enum.Enum):
     STRAY_LINE = "孤立雜訊行"
     CHINESE_ONLY = "純華語句"
     DUPLICATE_ANNOTATION = "重複標註"
-    SOURCE_SEGMENT_MISMATCH = "族語原句與詞素切割不符"
+    # 族語原句與詞素切割不符的 9 個小類。
+    # 規格見 features/族語原句詞素切割比對.feature。
+    MISMATCH_APOSTROPHE = MISMATCH_PREFIX + "只差單引號"
+    MISMATCH_WORDS = MISMATCH_PREFIX + "詞數不同"
+    MISMATCH_LENGTH = MISMATCH_PREFIX + "長度差很多"
+    MISMATCH_MANY = MISMATCH_PREFIX + "多處不同"
+    MISMATCH_LANGUAGE = MISMATCH_PREFIX + "族語和華語不一致"
+    MISMATCH_LENGTHENING = MISMATCH_PREFIX + "詞素切割有拉長音"
+    MISMATCH_LONG_VOWEL = MISMATCH_PREFIX + "只差長音符號"
+    MISMATCH_ONE = MISMATCH_PREFIX + "只差一個字母"
+    MISMATCH_FEW = MISMATCH_PREFIX + "差 2-3 個字母"
+    # 詞素切割行的標點。規格見 features/詞素切割標點.feature。
     SEGMENT_PUNCTUATION = "詞素切割有標點"
-    # 詞素切割行與詞素翻譯行的對應。這五類的值與
+    SEGMENT_SPEAKER_COLON = "詞素切割第一個詞有冒號，可能是語者標記沒空白"
+    SEGMENT_PLUS = "非泰雅語的詞素切割不應該用 + 符號"
+    # 詞素切割行與詞素翻譯行的對應。這些值與
     # features/詞素切割與詞素翻譯對應.feature 的 Scenario 名一樣。
     GLOSS_FEWER = "詞素切割的詞比詞素翻譯多"
     GLOSS_MORE = "詞素切割的詞比詞素翻譯少"
     GLOSS_CUT_MORE = "詞素切割沒有切，詞素翻譯有切"
     GLOSS_CUT_FEWER = "詞素切割有切，詞素翻譯沒有切"
     SYMBOL_KIND_DIFF = "詞素切割和詞素翻譯的符號不一樣"
+    ROOT_BEFORE_INFIX = "詞根放在中綴前面"
+    AFFIX_BEFORE_INFIX = "詞綴黏在中綴前面，切割符號在中綴後面"
     # warning
     MIXED_TIMECODE_FORMAT = "時間碼格式混用"
     UNKNOWN_TIMECODE_UNIT = "時間碼單位不明"
@@ -56,19 +79,52 @@ SEVERITY = {
     IssueKind.GLOSS_CUT_MORE: Severity.ERROR,
     IssueKind.GLOSS_CUT_FEWER: Severity.ERROR,
     IssueKind.SYMBOL_KIND_DIFF: Severity.ERROR,
+    IssueKind.ROOT_BEFORE_INFIX: Severity.ERROR,
+    IssueKind.AFFIX_BEFORE_INFIX: Severity.ERROR,
     IssueKind.GLOSS_FEWER: Severity.ERROR,
     IssueKind.GLOSS_MORE: Severity.ERROR,
-    # 細分成 parser.MISMATCH_WHY 的 6 個小類,小類的順序在那裡。
-    IssueKind.SOURCE_SEGMENT_MISMATCH: Severity.ERROR,
+    IssueKind.MISMATCH_APOSTROPHE: Severity.ERROR,
+    IssueKind.MISMATCH_WORDS: Severity.ERROR,
+    IssueKind.MISMATCH_LENGTH: Severity.ERROR,
+    IssueKind.MISMATCH_MANY: Severity.ERROR,
+    IssueKind.MISMATCH_LANGUAGE: Severity.ERROR,
+    IssueKind.MISMATCH_LENGTHENING: Severity.ERROR,
+    IssueKind.SEGMENT_PLUS: Severity.ERROR,
+    IssueKind.MISMATCH_LONG_VOWEL: Severity.EXPORTED_ERROR,
     IssueKind.SEGMENT_PUNCTUATION: Severity.EXPORTED_ERROR,
     # 時間碼顛倒是資料錯,但標注本身沒有問題,所以照常匯出。
     IssueKind.REVERSED_TIMECODE: Severity.WARNING,
     IssueKind.MIXED_TIMECODE_FORMAT: Severity.WARNING,
     IssueKind.UNKNOWN_TIMECODE_UNIT: Severity.WARNING,
+    IssueKind.MISMATCH_ONE: Severity.UNSURE,
+    IssueKind.MISMATCH_FEW: Severity.UNSURE,
+    IssueKind.SEGMENT_SPEAKER_COLON: Severity.UNSURE,
     IssueKind.EMPTY_ENTRY: Severity.NOTICE,
     IssueKind.ORPHAN_TIMECODE: Severity.NOTICE,
     IssueKind.CHINESE_ONLY: Severity.NOTICE,
 }
+
+
+# 不匯出翻譯訓練YAML 的嚴重度。
+NOT_EXPORTED = (Severity.ERROR, Severity.UNSURE, Severity.NOTICE)
+
+
+def is_mismatch(kind):
+    """是不是「族語原句與詞素切割不符」的小類。"""
+    return kind.value.startswith(MISMATCH_PREFIX)
+
+
+def id_group(kind):
+    """算問題 ID 用的大類名稱。
+
+    小類是 2026.11 才拆出來的。ID 用拆開以前的名稱,老師在校對表填過的
+    判斷才對得回去;小類改判(例如多處不同改成族語和華語不一致)ID 也不變。
+    """
+    if is_mismatch(kind):
+        return MISMATCH
+    if kind in (IssueKind.SEGMENT_SPEAKER_COLON, IssueKind.SEGMENT_PLUS):
+        return IssueKind.SEGMENT_PUNCTUATION.value
+    return kind.value
 
 
 def code(text):
@@ -122,13 +178,51 @@ KIND_WHY = {
     IssueKind.DUPLICATE_ANNOTATION:
         "同一句留了兩版詞素切割與詞素翻譯(修訂沒清乾淨)，不是長句換行。"
         "用族語原句與詞素切割的長度比判斷出來的。",
-    IssueKind.SOURCE_SEGMENT_MISMATCH:
-        "詞素切割行去掉切割符號後，與族語原句逐字比對不符。詳細分類見下面。",
+    IssueKind.MISMATCH_APOSTROPHE:
+        "只有喉塞音單引號的有無或位置不同。排灣語 ODS 1-3 規定詞素切割的 "
+        "[k] / ['] 要跟著族語原句的寫法，所以這一類多半是要決定哪一邊才對。",
+    IssueKind.MISMATCH_WORDS:
+        "字母序列一樣，可是詞的個數不一樣——族語原句黏成一個詞、詞素切割拆開"
+        "（或相反）。依照「詞數要一個對一個、只有依附詞與詞組例外」，"
+        "這種算不符。",
+    IssueKind.MISMATCH_LENGTH:
+        "長度差四分之一以上，通常是詞素切割比族語原句少了一整串（或多了一整串），"
+        "內容可能遺失。",
+    IssueKind.MISMATCH_MANY:
+        "差很多個字母，可能是換了詞、或族語原句與詞素切割不是同一句。",
+    IssueKind.MISMATCH_LANGUAGE:
+        "同一個位置的詞，一邊寫族語、一邊寫華語（例如族語原句寫 `moyi`、"
+        "詞素切割寫 `母語`）。族語原句和詞素切割要都是族語或都是華語。",
+    IssueKind.MISMATCH_LENGTHENING:
+        "詞素切割寫了拉長音的 `==`。《常用構詞標記清單》的拉長音「不用標」，"
+        "`==` 只該出現在族語原句，詞素切割、詞素翻譯不用標。",
+    IssueKind.MISMATCH_LONG_VOWEL:
+        "阿美語的長音符號 `:` 兩行不一致，詞素切割要跟族語原句一樣保留。"
+        "這是錯誤，但照常匯出。",
+    IssueKind.MISMATCH_ONE:
+        "只差一個字母，多半是詞素切割時多打或漏打一個音，或是照發音改寫了拼法。"
+        "不一定是錯，列為待檢查，請老師看。泰雅、太魯閣、賽德克算通過。",
+    IssueKind.MISMATCH_FEW:
+        "差 2-3 個字母，通常是拼法慣例不同。不一定是錯，列為待檢查，"
+        "請老師看。泰雅、太魯閣、賽德克算通過。",
     IssueKind.SEGMENT_PUNCTUATION:
         "2026.09 會議案由五決議：詞素切割行不能有標點。字母、漢字、數字、"
-        "切割符號、單引號、空白，以及書寫系統明定的符號（阿美語的 `^`、"
-        "`:`，泰雅語的 `_` 等）以外的字元都算。這是錯誤，但照常匯出；"
+        "切割符號、詞中間的 `.`、單引號、空白、`＠`，以及書寫系統明定的符號"
+        "（阿美語的 `^`、`:`，泰雅語的 `_`、`+` 等）以外的字元都算；"
+        "說話者標記（`G:`）不算。這是錯誤，但照常匯出；"
         "每段的提示寫出第幾個詞、應該怎麼改。",
+    IssueKind.SEGMENT_SPEAKER_COLON:
+        "泰雅語詞素切割的第一個詞裡面有冒號（`Yu:m-uwah`），可能是說話者"
+        "標記後面沒有空白，也可能是一般的族語詞。程式建議刪掉冒號，"
+        "不一定對，請老師判斷。",
+    IssueKind.SEGMENT_PLUS:
+        "只有泰雅語可以用 `+` 標示詞組，其他語言的詞組要用 `.`。",
+    IssueKind.ROOT_BEFORE_INFIX:
+        "有中綴的詞，詞素翻譯把詞根寫在中綴前面（`說<主焦>`），"
+        "應該寫在中綴後面（`<主焦>說`）。",
+    IssueKind.AFFIX_BEFORE_INFIX:
+        "有中綴的詞，詞素翻譯寫成「詞綴<中綴>-詞根」（`使役<主焦>-告訴`），"
+        "切割符號跑到中綴後面；應該寫「詞綴-<中綴>詞根」（`使役-<主焦>告訴`）。",
     IssueKind.GLOSS_FEWER:
         "詞素切割行的詞比詞素翻譯行多，兩行沒辦法一個詞對一個詞。",
     IssueKind.GLOSS_MORE:
@@ -202,13 +296,11 @@ class Entry:
     translation: str = ""
     words: list = field(default_factory=list)
     issues: list = field(default_factory=list)
-    # 詞素切割行裡待討論的符號，{名稱: 處數}，報告的待討論章用。
-    discuss: dict = field(default_factory=dict)
 
     def is_clean(self):
-        """沒有 ERROR 也沒有 NOTICE 才可以匯出。"""
+        """沒有 ERROR、UNSURE、NOTICE 才可以匯出。"""
         for issue in self.issues:
-            if issue.severity in (Severity.ERROR, Severity.NOTICE):
+            if issue.severity in NOT_EXPORTED:
                 return False
         return True
 
@@ -273,7 +365,7 @@ class NormKind(enum.Enum):
 
     BOM = "移除 BOM(U+FEFF)"
     FULLWIDTH_EQUALS = "全形 ＝ → 半形 ="
-    APOSTROPHE = "引號統一為 U+0027"
+    APOSTROPHE = "引號統一為 U+02BC"
     EN_DASH = "詞素切割行與詞素翻譯行的 en-dash – → 半形 -"
     WHITESPACE = "多餘空白合併"
     LONG_ENTRY_REJOIN = "長句換行重組"
@@ -288,7 +380,8 @@ NORM_WHY = {
     NormKind.FULLWIDTH_EQUALS:
         "全形＝與半形=同樣是附著詞符號，必須統一才能比對。",
     NormKind.APOSTROPHE:
-        "語料混用 U+0027 與 U+2019，同一個詞會變成兩種寫法。",
+        "語料混用 U+0027、U+2018、U+2019、U+02BC，同一個詞會變成好幾種寫法，"
+        "所以統一成 U+02BC。當引用符號用的引號（`wah!'`、`‘‘…’’`）不轉。",
     NormKind.EN_DASH:
         "詞素翻譯行有時用 en-dash 代替連字號，會與詞素切割行不呼應。",
     NormKind.WHITESPACE:
@@ -309,7 +402,10 @@ NORM_WHY = {
 NORM_FEATURE = {
     NormKind.BOM: ("字元正規化", "移除 BOM（U+FEFF）"),
     NormKind.FULLWIDTH_EQUALS: ("字元正規化", "全形 ＝ 換成半形 ="),
-    NormKind.APOSTROPHE: ("字元正規化", "引號統一成 U+0027"),
+    NormKind.APOSTROPHE: (
+        "字元正規化",
+        "資料寫 U+0027、U+2018、U+2019、U+02BC 都接受。"
+        "之後使用時引號再統一轉成 U+02BC"),
     NormKind.EN_DASH:
         ("字元正規化", "詞素切割行與詞素翻譯行的 en-dash – 換成半形 -"),
     NormKind.WHITESPACE: ("字元正規化", "多餘的空白合併成一個"),

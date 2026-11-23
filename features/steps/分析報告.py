@@ -18,9 +18,6 @@ from tests import DATA
 from scripts import validate_glossing
 from scripts.smkul import proofreading, report
 from scripts.smkul.entry import SEVERITY, Entry, Issue, IssueKind, Severity
-from scripts.smkul.parser import MISMATCH_WHY
-
-MISMATCH_PREFIX = IssueKind.SOURCE_SEGMENT_MISMATCH.value + "-"
 
 
 def _severity_of(value):
@@ -39,29 +36,18 @@ def _kind_with(severity):
 
 
 def _issue_for(kind, number="1"):
-    detail = ""
-    if kind is IssueKind.SOURCE_SEGMENT_MISMATCH:
-        detail = next(iter(MISMATCH_WHY)) + ":差異"
-    return Issue(kind, "阿美族/秀姑巒/a.docx", number, detail)
+    return Issue(kind, "阿美族/秀姑巒/a.docx", number, "原因")
 
 
 def _program_labels():
-    """程式裡的問題名稱與嚴重度,照 SEVERITY 的順序;不符的大類展開成小類。"""
+    """程式裡的問題名稱與嚴重度,照 SEVERITY 的順序。"""
     out = []
     for kind, severity in SEVERITY.items():
-        if kind is IssueKind.SOURCE_SEGMENT_MISMATCH:
-            for sub in MISMATCH_WHY:
-                out.append((MISMATCH_PREFIX + sub, severity.value))
-        else:
-            out.append((kind.value, severity.value))
+        out.append((kind.value, severity.value))
     return out
 
 
 def _issue_for_label(label, number):
-    if label.startswith(MISMATCH_PREFIX):
-        return Issue(IssueKind.SOURCE_SEGMENT_MISMATCH,
-                     "阿美族/秀姑巒/a.docx", number,
-                     label[len(MISMATCH_PREFIX):] + ":差異")
     for kind in IssueKind:
         if kind.value == label:
             return Issue(kind, "阿美族/秀姑巒/a.docx", number, "原因")
@@ -157,11 +143,6 @@ def step_沒有表外的問題(context):
     for label, severity in context.labels:
         labels.add(label)
     for kind in IssueKind:
-        if kind is IssueKind.SOURCE_SEGMENT_MISMATCH:
-            for sub in MISMATCH_WHY:
-                assert MISMATCH_PREFIX + sub in labels, (
-                    "feature 少了:" + MISMATCH_PREFIX + sub)
-            continue
         assert kind.value in labels, "程式有 feature 沒寫的問題:" + kind.value
 
 

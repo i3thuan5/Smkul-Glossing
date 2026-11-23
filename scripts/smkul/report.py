@@ -2,11 +2,9 @@
 
 import datetime
 import os
-from collections import Counter, OrderedDict, namedtuple
+from collections import Counter, OrderedDict
 
-from scripts.smkul.entry import (NORM_FEATURE, SEVERITY, IssueKind,
-                                 Severity, code)
-from scripts.smkul.parser import MISMATCH_WHY
+from scripts.smkul.entry import NORM_FEATURE, SEVERITY, Severity, code
 from scripts.smkul.rules import SPECIAL_MARKS, SYMBOL_MEANING
 
 OUT_DIR = os.path.join("kithann", "out")
@@ -44,14 +42,11 @@ def table(headers, rows):
 
 
 def issue_label(issue):
-    """報告上顯示的問題名稱。
+    """報告上顯示的問題名稱,就是問題種類的名稱。
 
-    「族語原句與詞素切割不符」拆到細分類型(只差單引號、只差一個字母……),
-    這樣總覽的表格就分得出哪一類要優先處理。
+    「族語原句與詞素切割不符」的小類(只差單引號、只差一個字母……)
+    各是一種問題,名稱裡已經帶著小類。
     """
-    if issue.kind is IssueKind.SOURCE_SEGMENT_MISMATCH and \
-            ":" in issue.detail:
-        return issue.kind.value + "-" + issue.detail.split(":", 1)[0]
     return issue.kind.value
 
 
@@ -65,17 +60,11 @@ def count_kinds(issues):
 def ordered_labels(issues):
     """這次有發生的問題名稱,照 SEVERITY 的順序,不看筆數。
 
-    「族語原句與詞素切割不符」展開成 parser.MISMATCH_WHY 的小類。
     順序的正本是 features/分析報告.feature。
     """
     counter = count_kinds(issues)
     out = []
     for kind in SEVERITY:
-        if kind is IssueKind.SOURCE_SEGMENT_MISMATCH:
-            for sub in MISMATCH_WHY:
-                label = kind.value + "-" + sub
-                if label in counter:
-                    out.append(label)
         if kind.value in counter:
             out.append(kind.value)
     return out
@@ -134,21 +123,13 @@ def norm_section(log, compare_note=""):
 
 
 def severity_split(issues):
-    """依嚴重度分成四組:錯誤、錯誤（照常匯出）、警告（照常匯出）、現象。"""
-    errors = []
-    exported = []
-    warnings = []
-    notices = []
+    """依嚴重度分組,回傳 {Severity: [Issue]},五級都有,照 Severity 的順序。"""
+    out = OrderedDict()
+    for severity in Severity:
+        out[severity] = []
     for issue in issues:
-        if issue.severity is Severity.ERROR:
-            errors.append(issue)
-        elif issue.severity is Severity.EXPORTED_ERROR:
-            exported.append(issue)
-        elif issue.severity is Severity.WARNING:
-            warnings.append(issue)
-        else:
-            notices.append(issue)
-    return errors, exported, warnings, notices
+        out[issue.severity].append(issue)
+    return out
 
 
 def _with_id(where, issue):
@@ -227,16 +208,11 @@ def collect_samples(issues, limit=SAMPLE_LIMIT):
 
 
 def shown_detail(issue):
-    """例子與校對表顯示的原因。
+    """例子與校對表顯示的原因,就是 detail。
 
-    「族語原句與詞素切割不符」的 detail 是「分類:差異」,分類已經是
-    小節名稱,這裡只留差異。其他問題的 detail 可能引用語料裡的冒號
-    (例如 `Yu:m-uwah`),不能切。
+    detail 可能引用語料裡的冒號(例如 `Yu:m-uwah`),所以原樣顯示、不切。
     """
-    detail = issue.detail
-    if issue.kind is IssueKind.SOURCE_SEGMENT_MISMATCH and ":" in detail:
-        detail = detail.split(":", 1)[-1]
-    return detail
+    return issue.detail
 
 
 def render_issue(issue):
@@ -285,72 +261,6 @@ def kind_section(title, issues, why_of, order=None):
         for issue in found:
             for line in render_issue(issue):
                 lines.append(line)
-    return "\n".join(lines)
-
-
-# 待討論章的一段語料。count 是這一段裡那種符號的處數。
-DiscussRow = namedtuple(
-    "DiscussRow",
-    ["ethnic", "variant", "path", "number", "source", "segmentation",
-     "count"],
-)
-# 待討論章每一節最多列幾段。
-DISCUSS_LIMIT = 20
-
-
-def pick_rows(rows, limit=DISCUSS_LIMIT):
-    """在語言別、檔案之間輪流挑，最多 limit 段。挑法固定，重跑一樣。
-
-    依「族別、語言別、檔案」排序分組，每一輪從每個檔案拿下一段。
-    """
-    groups = OrderedDict()
-    for key in sorted(set(_group_keys(rows))):
-        groups[key] = []
-    for row in rows:
-        groups[(row.ethnic, row.variant, row.path)].append(row)
-    picked = []
-    turn = 0
-    while len(picked) < limit:
-        took = False
-        for found in groups.values():
-            if turn < len(found) and len(picked) < limit:
-                picked.append(found[turn])
-                took = True
-        if not took:
-            break
-        turn += 1
-    return picked
-
-
-def _group_keys(rows):
-    keys = []
-    for row in rows:
-        keys.append((row.ethnic, row.variant, row.path))
-    return keys
-
-
-def discuss_section(title, intro, parts):
-    """待討論章。parts 是 (小節名稱, 說明, DiscussRow 清單)。"""
-    lines = [heading(title), "", intro]
-    for label, why, rows in parts:
-        places = 0
-        for row in rows:
-            places += row.count
-        lines.append("")
-        lines.append(heading(
-            label + "(" + str(len(rows)) + " 段，" + str(places) + " 處)",
-            3))
-        lines.append("")
-        lines.append(why)
-        lines.append("")
-        if not rows:
-            lines.append("(無)")
-            continue
-        for row in pick_rows(rows):
-            lines.append(
-                "- " + row.path.split("/")[-1] + " 第" + row.number + "段")
-            lines.append("  - 族語原句:" + code(row.source))
-            lines.append("  - 詞素切割:" + code(row.segmentation))
     return "\n".join(lines)
 
 

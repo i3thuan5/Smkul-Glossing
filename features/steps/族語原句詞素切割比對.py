@@ -2,18 +2,34 @@
 
 每個 scenario 自己帶著要比對的兩行，所以不需要語料就能跑。
 分類的名稱與 features/族語原句詞素切割比對.feature 的 Scenario 一致。
+有些規則只限某些語言，那種 scenario 用「族別是 …，族語原句是 …」帶族別。
 """
 
 from behave import then, when
 
-from scripts.smkul.parser import compare_source
+from scripts.smkul.entry import Issue
+from scripts.smkul.parser import MISMATCH_KIND, compare_source
+
+
+def _compare(context, source, segmentation, ethnic=""):
+    context.source = source
+    context.segmentation = segmentation
+    context.check = compare_source(source, segmentation, ethnic)
+    context.issues = []
+    if not context.check.passed:
+        context.issues.append(Issue(
+            MISMATCH_KIND[context.check.kind], "feature", "1",
+            context.check.detail))
 
 
 @when('族語原句是 "{source}"，詞素切割是 "{segmentation}"')
 def step_族語原句詞素切割(context, source, segmentation):
-    context.source = source
-    context.segmentation = segmentation
-    context.check = compare_source(source, segmentation)
+    _compare(context, source, segmentation)
+
+
+@when('族別是 "{ethnic}"，族語原句是 "{source}"，對應詞素切割是 "{segmentation}"')
+def step_族別族語原句詞素切割(context, ethnic, source, segmentation):
+    _compare(context, source, segmentation, ethnic)
 
 
 @then("逐字比對通過")

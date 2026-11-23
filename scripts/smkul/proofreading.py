@@ -12,9 +12,10 @@ import re
 from collections import OrderedDict, namedtuple
 
 from scripts.smkul import report, xlsx
-from scripts.smkul.entry import IssueKind, Severity
+from scripts.smkul.entry import Severity, id_group, is_mismatch
 from scripts.smkul.languages import split_kind
-from scripts.smkul.parser import bare_form_positions, check_segment_punctuation
+from scripts.smkul.parser import (GLOTTAL, bare_form_positions,
+                                  check_segment_punctuation)
 
 ID_PREFIX = "ISSUE-"
 # ID 取 sha256 的前幾碼。
@@ -22,14 +23,17 @@ ID_LENGTH = 8
 
 
 def id_source(issue, body):
-    """算 ID 用的內容:檔案、段編號、問題種類、段的全部內文行。
+    """算 ID 用的內容:檔案、段編號、問題的大類、段的全部內文行。
 
     沒有段編號的問題(檔案層的問題、孤兒時間碼)用原因與對照代替內文。
+    問題種類用 entry.id_group 的大類,2026.11 拆出來的小類 ID 才不會變;
+    內文行的 U+02BC 折回 U+0027(2026.11 以前的正規化結果),引號改成
+    統一轉 U+02BC 之後,老師填過的判斷才對得回去。
     """
-    parts = [issue.path, issue.number, issue.kind.value]
+    parts = [issue.path, issue.number, id_group(issue.kind)]
     if issue.number and body:
         for line in body:
-            parts.append(line)
+            parts.append(line.replace(GLOTTAL, "'"))
     else:
         parts.append(issue.detail)
         for label, value in issue.compare:
@@ -183,9 +187,11 @@ def apply_judgements(issues, judgements):
     return confirmed, discussed
 
 
-# 要請老師校對的嚴重度:錯誤兩級要請人修。警告、現象不列入校對表。
+# 要請老師校對的嚴重度:錯誤兩級要請人修,不確定的要請老師看。
+# 警告、現象不列入校對表。
 # 規格見 features/分析報告.feature「嚴重度決定翻譯訓練YAML、報告舉例、請老師校對」。
-PROOFREAD_SEVERITIES = (Severity.ERROR, Severity.EXPORTED_ERROR)
+PROOFREAD_SEVERITIES = (
+    Severity.ERROR, Severity.EXPORTED_ERROR, Severity.UNSURE)
 
 # 校對表的一列:族別、語言別、問題,以及問題所在的段(檔案層的問題是 None)。
 SheetRow = namedtuple("SheetRow", ["ethnic", "variant", "issue", "entry"])
@@ -217,23 +223,23 @@ def _word_spans(text):
 def marked_cells(issue, entry, ethnic):
     """要標紅的語料格:{欄名: [(文字, 要不要標紅)]}。
 
-    「詞素切割有標點」標有問題的詞;「族語原句與詞素切割不符」標兩邊
+    詞素切割標點的三種標有問題的詞;「族語原句與詞素切割不符」標兩邊
     不一樣的字母;其他種類不標。
     """
     if entry is None:
         return {}
-    if issue.kind is IssueKind.SEGMENT_PUNCTUATION:
-        result = check_segment_punctuation(entry.segmentation, ethnic)
+    result = check_segment_punctuation(entry.segmentation, ethnic)
+    if issue.kind in result.findings:
         spans = _word_spans(entry.segmentation)
         marked = set()
-        for position in result.positions:
+        for position in result.findings[issue.kind].positions:
             start, end = spans[position]
             for index in range(start, end):
                 marked.add(index)
         if not marked:
             return {}
         return {"詞素切割": _segments(entry.segmentation, marked)}
-    if issue.kind is IssueKind.SOURCE_SEGMENT_MISMATCH:
+    if is_mismatch(issue.kind):
         one, one_at = bare_form_positions(entry.source)
         other, other_at = bare_form_positions(entry.segmentation)
         left = set()
@@ -256,11 +262,14 @@ def marked_cells(issue, entry, ethnic):
 
 
 def _number_key(number):
-    """段編號照數字排,9 在 10 前面。"""
-    found = re.match(r"\d+", number)
+    """段編號照數字排,9 在 10 前面;切開的段 13-1、13-2 排在 13 與 14 中間。"""
+    found = re.match(r"(\d+)(?:-(\d+))?", number)
     if found:
-        return (0, int(found.group(0)), number)
-    return (1, 0, number)
+        part = 0
+        if found.group(2):
+            part = int(found.group(2))
+        return (0, int(found.group(1)), part, number)
+    return (1, 0, 0, number)
 
 
 def _issue_row(row, judgements):

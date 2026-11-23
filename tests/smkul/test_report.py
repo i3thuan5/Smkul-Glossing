@@ -46,18 +46,21 @@ class TestSections(unittest.TestCase):
             Issue(IssueKind.MIXED_TIMECODE_FORMAT, "b.txt", "", "混用"),
             Issue(IssueKind.SEGMENT_PUNCTUATION, "b.txt", "1", "標點"),
             Issue(IssueKind.CHINESE_ONLY, "b.txt", "112", "華語"),
+            Issue(IssueKind.MISMATCH_ONE, "b.txt", "62", "「l」→「r」"),
         ]
 
-    def test_依嚴重度分四組(self):
-        errors, exported, warnings, notices = report.severity_split(
-            self.build_issues())
-        self.assertEqual(len(errors), 2)
-        self.assertEqual(len(exported), 1)
-        self.assertEqual(len(warnings), 1)
-        self.assertEqual(len(notices), 1)
-        for issue in errors:
+    def test_依嚴重度分五組(self):
+        split = report.severity_split(self.build_issues())
+        self.assertEqual(list(split), list(Severity))
+        self.assertEqual(len(split[Severity.ERROR]), 2)
+        self.assertEqual(len(split[Severity.EXPORTED_ERROR]), 1)
+        self.assertEqual(len(split[Severity.WARNING]), 1)
+        self.assertEqual(len(split[Severity.UNSURE]), 1)
+        self.assertEqual(len(split[Severity.NOTICE]), 1)
+        for issue in split[Severity.ERROR]:
             self.assertIs(issue.severity, Severity.ERROR)
-        self.assertIs(exported[0].kind, IssueKind.SEGMENT_PUNCTUATION)
+        self.assertIs(split[Severity.EXPORTED_ERROR][0].kind,
+                      IssueKind.SEGMENT_PUNCTUATION)
 
     def test_自動處理_沒發生的項目也要列(self):
         log = NormLog()
@@ -83,8 +86,8 @@ class TestSections(unittest.TestCase):
 
     def test_例子的對照分兩行(self):
         # corpus-export「對照式差異分兩行呈現」。
-        issue = Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, "阿美族/a.docx", "62",
-                      "只差一個字母:「l」→「r」",
+        issue = Issue(IssueKind.MISMATCH_ONE, "阿美族/a.docx", "62",
+                      "「l」→「r」",
                       [("族語原句", "mahatila"), ("詞素切割", "ma-ha-tira")])
         self.assertEqual(report.render_issue(issue), [
             "- a.docx 第62段|「l」→「r」",
@@ -96,9 +99,10 @@ class TestSections(unittest.TestCase):
         issue = Issue(IssueKind.GLUED_LINE, "阿美族/a.txt", "26", "黏著")
         self.assertEqual(report.render_issue(issue), ["- a.txt 第26段|黏著"])
 
-    def test_例子只對族語原句與詞素切割不符切掉分類(self):
-        issue = Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, "a.txt", "62",
-                      "只差一個字母:「l」→「r」")
+    def test_不符的小類名稱不重複寫在原因裡(self):
+        issue = Issue(IssueKind.MISMATCH_ONE, "a.txt", "62", "「l」→「r」")
+        self.assertEqual(report.issue_label(issue),
+                         "族語原句與詞素切割不符-只差一個字母")
         self.assertEqual(
             report.render_issue(issue), ["- a.txt 第62段|「l」→「r」"])
 
@@ -120,10 +124,8 @@ class TestOrder(unittest.TestCase):
                             (IssueKind.GLUED_LINE, 2)):
             for number in range(count):
                 out.append(Issue(kind, "a.docx", str(number)))
-        out.append(Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, "a.docx", "9",
-                         "多處不同:差異"))
-        out.append(Issue(IssueKind.SOURCE_SEGMENT_MISMATCH, "a.docx", "8",
-                         "只差單引號:差異"))
+        out.append(Issue(IssueKind.MISMATCH_MANY, "a.docx", "9", "差異"))
+        out.append(Issue(IssueKind.MISMATCH_APOSTROPHE, "a.docx", "8", "差異"))
         return out
 
     def test_照_severity_的順序_不看筆數(self):
@@ -132,6 +134,18 @@ class TestOrder(unittest.TestCase):
             "族語原句與詞素切割不符-只差單引號",
             "族語原句與詞素切割不符-多處不同",
             "詞素切割有標點",
+            "純華語句",
+        ])
+
+    def test_不確定待檢查排在警告後面_現象前面(self):
+        issues = [
+            Issue(IssueKind.CHINESE_ONLY, "a.docx", "1"),
+            Issue(IssueKind.MISMATCH_ONE, "a.docx", "2"),
+            Issue(IssueKind.UNKNOWN_TIMECODE_UNIT, "a.docx"),
+        ]
+        self.assertEqual(report.ordered_labels(issues), [
+            "時間碼單位不明",
+            "族語原句與詞素切割不符-只差一個字母",
             "純華語句",
         ])
 
@@ -155,58 +169,10 @@ class TestOrder(unittest.TestCase):
         self.assertLess(got.index("一段同一種只記一筆"), got.index("| 編號 |"))
 
 
-class TestDiscuss(unittest.TestCase):
-    """待討論章的挑法:語言別、檔案輪流挑，最多 20 段，重跑一樣。"""
+class TestOtherSections(unittest.TestCase):
 
-    def rows(self):
-        out = []
-        for path, count in (("泰雅族/賽考利克/1.docx", 30),
-                            ("泰雅族/賽考利克/2.docx", 3),
-                            ("排灣族/中排灣/1.docx", 5)):
-            ethnic = path.split("/")[0][:-1]
-            variant = path.split("/")[1]
-            for number in range(1, count + 1):
-                out.append(report.DiscussRow(
-                    ethnic, variant, path, str(number), "原句", "切割", 1))
-        return out
-
-    def test_最多二十段(self):
-        self.assertEqual(len(report.pick_rows(self.rows())), 20)
-
-    def test_輪流挑(self):
-        picked = report.pick_rows(self.rows())
-        paths = []
-        for row in picked[:3]:
-            paths.append(row.path)
-        self.assertEqual(
-            paths,
-            ["排灣族/中排灣/1.docx", "泰雅族/賽考利克/1.docx",
-             "泰雅族/賽考利克/2.docx"],
-        )
-        numbers = []
-        for row in picked:
-            if row.path == "泰雅族/賽考利克/2.docx":
-                numbers.append(row.number)
-        self.assertEqual(numbers, ["1", "2", "3"])
-
-    def test_重跑一樣(self):
-        self.assertEqual(
-            report.pick_rows(self.rows()), report.pick_rows(self.rows()))
-
-    def test_章節寫段數與處數(self):
-        rows = [report.DiscussRow(
-            "泰雅", "賽考利克", "泰雅族/賽考利克/1.docx", "9",
-            "nanu yasa lga,", "nanu.yasa la+ga", 2)]
-        got = report.discuss_section(
-            "待討論", "說明", [("`+`", "加號的說明", rows)])
-        self.assertIn("### `+`(1 段，2 處)", got)
-        self.assertIn("加號的說明", got)
-        self.assertIn("- 1.docx 第9段", got)
-        self.assertIn("  - 詞素切割:`nanu.yasa la+ga`", got)
-
-    def test_沒有的時候寫無(self):
-        got = report.discuss_section("待討論", "說明", [("`+`", "說明", [])])
-        self.assertIn("(無)", got)
+    def test_沒有待討論章(self):
+        self.assertFalse(hasattr(report, "discuss_section"))
 
     def test_依語言別統計(self):
         got = report.variant_section(
