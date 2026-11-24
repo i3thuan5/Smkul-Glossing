@@ -18,6 +18,7 @@ from scripts.smkul.entry import (
     is_mismatch,
     Issue,
     IssueKind,
+    NO_TIME,
     NormKind,
 )
 
@@ -31,7 +32,7 @@ NUM_TIME = re.compile(
 )
 NUM_ONLY = re.compile(r'^\s*(\d+)[.]?\s*$')
 
-# 分隔符 → 格式名。光看分隔符就能分出四種格式。
+# 分隔符 → 格式名。規格見 features/時間碼.feature。
 SEPARATOR_NAME = {
     "-->": "SRT 式",
     ",": "逗號式",
@@ -39,8 +40,14 @@ SEPARATOR_NAME = {
     "—": "en-dash 式",
     "-": "連字號式",
 }
-# 連字號式沒有毫秒,單位問題要跟對方確認。
+# 用 --> 分開、毫秒卻用小數點的(南排灣 3),跟 SRT 式分開算檔數。
+ARROW_DOT_FORMAT = "--> 配小數點"
+# 連字號式沒有毫秒,照 分:秒:影格 換算;30fps 是推斷的,要跟對方確認。
 UNCLEAR_UNIT_FORMAT = "連字號式"
+FRAMES_PER_SECOND = 30
+# 有「數字:數字」的樣子。編號行的下一行有這個樣子、卻解析不了,
+# 就是時間碼行打錯。
+TIMECODE_LIKE = re.compile(r'\d\s*[:;]\s*\d')
 
 # GLOTTAL:喉塞音一律用 U+02BC;語料裡的 U+0027、U+2018、U+2019 也算喉塞音。
 
@@ -49,14 +56,46 @@ GLOTTAL = "\u02bc"
 QUOTES = "'\u2018\u2019" + GLOTTAL
 
 
-def timecode_parts(value):
-    """時間碼拆成數字,才能比較先後。同一行的開始和結束一定是同一種格式,
-    所以照欄位比就會準,不用管單位是什麼。"""
-    out = []
-    for chunk in re.split(r'[:.,]', value):
-        if chunk.isdigit():
-            out.append(int(chunk))
-    return tuple(out)
+def timecode_milliseconds(stamp, fmt):
+    """時間碼原字串換成總毫秒數;毫秒不是三位數就回傳 None。
+
+    連字號式是 分:秒:影格(30fps),影格用整數四捨五入成毫秒
+    (不用 round,round 遇到 .5 會捨入成偶數)。其他格式是 時:分:秒 加毫秒。
+    """
+    parts = re.split(r'[:.,]', stamp)
+    if fmt == UNCLEAR_UNIT_FORMAT and len(parts) == 3:
+        minutes, seconds, frames = int(parts[0]), int(parts[1]), int(parts[2])
+        half = FRAMES_PER_SECOND // 2
+        frame_ms = (frames * 1000 + half) // FRAMES_PER_SECOND
+        return minutes * 60000 + seconds * 1000 + frame_ms
+    if len(parts) != 4 or len(parts[3]) != 3:
+        return None
+    hours, minutes, seconds = int(parts[0]), int(parts[1]), int(parts[2])
+    return (hours * 3600 + minutes * 60 + seconds) * 1000 + int(parts[3])
+
+
+def srt_string(milliseconds):
+    """總毫秒數換成 SRT 字串 HH:MM:SS,mmm。"""
+    hours, rest = divmod(milliseconds, 3600000)
+    minutes, rest = divmod(rest, 60000)
+    seconds, rest = divmod(rest, 1000)
+    return "%02d:%02d:%02d,%03d" % (hours, minutes, seconds, rest)
+
+
+def convert_timecode(start, end, fmt):
+    """開始、結束的原字串轉成 SRT 字串。回傳 (開始, 結束, 問題種類)。
+
+    時間不能用的,開始、結束都是 NO_TIME,問題種類是毫秒位數不對或
+    結束時間早於開始;沒問題的問題種類是 None。
+    毫秒位數不對就不比先後:毫秒讀不準,先後也比不準。
+    """
+    begin = timecode_milliseconds(start, fmt)
+    finish = timecode_milliseconds(end, fmt)
+    if begin is None or finish is None:
+        return NO_TIME, NO_TIME, IssueKind.TIMECODE_MS_DIGITS
+    if finish < begin:
+        return NO_TIME, NO_TIME, IssueKind.REVERSED_TIMECODE
+    return srt_string(begin), srt_string(finish), None
 
 
 def _char_at(line, index):
@@ -146,13 +185,14 @@ def normalize_text(text, log=None, path=""):
     這一層不換 en-dash、不摺疊空白——切段要先認出時間碼行，
     而排版分析要看得到原本的行。那兩項在 normalize_line。
     """
-    if text.startswith(BOM):
-        text = text[len(BOM):]
-        if log is not None:
-            first = text.split("\n", 1)[0].strip()
-            log.note(NormKind.BOM, BOM + first, first, path)
     out = []
     for line in text.split("\n"):
+        # BOM 不一定在全文最前面:docx 第一段時間碼行的最前面也有
+        # (檔頭與編號行在它前面)。BOM 擋住時間碼,第一段就會被當成檔頭。
+        if line.startswith(BOM):
+            line = line[len(BOM):]
+            if log is not None:
+                log.note(NormKind.BOM, BOM + line.strip(), line.strip(), path)
         out.append(_fix_chars(line, log, path))
     return "\n".join(out)
 
@@ -173,20 +213,28 @@ def parse_timecode(line):
     if matched is None:
         return None
     number = matched.group(1) or ""
+    fmt = SEPARATOR_NAME[matched.group(3)]
+    if matched.group(3) == "-->" and "." in matched.group(2):
+        fmt = ARROW_DOT_FORMAT
     return (
         number,
         matched.group(2),
         matched.group(4),
-        SEPARATOR_NAME[matched.group(3)],
+        fmt,
     )
 
 
 def _entry_starts(lines):
-    """找出每一段的起頭。回傳 [(起始 index, 時間碼 index, 解析結果)]。"""
+    """找出每一段的起頭。回傳 [(起始 index, 時間碼 index, 解析結果)]。
+
+    編號行的下一行有「數字:數字」的樣子、卻解析不了,是時間碼行打錯:
+    照樣當成段的起頭,解析結果是 (編號, 原字串, "", None),格式是 None。
+    規格見 features/時間碼.feature「編號行的下一行看起來是時間碼…」。
+    """
     out = []
     for index, line in enumerate(lines):
         parsed = parse_timecode(line)
-        if parsed is None:
+        if parsed is None and not TIMECODE_LIKE.search(line):
             continue
         back = index - 1
         while back >= 0 and not lines[back].strip():
@@ -194,6 +242,11 @@ def _entry_starts(lines):
         number_match = None
         if back >= 0:
             number_match = NUM_ONLY.match(lines[back])
+        if parsed is None:
+            if number_match is not None:
+                typo = (number_match.group(1), line.strip(), "", None)
+                out.append((back, index, typo))
+            continue
         if number_match is not None and not parsed[0]:
             parsed = (number_match.group(1),) + parsed[1:]
             out.append((back, index, parsed))
@@ -374,9 +427,14 @@ def split_entries(text, path="", log=None):
     issues = []
     formats = OrderedDict()
     for order, (begin, time_index, parsed) in enumerate(starts):
-        number, start, end, fmt = parsed
-        if fmt not in formats:
-            formats[fmt] = lines[time_index].strip()
+        number, raw_start, raw_end, fmt = parsed
+        raw_line = lines[time_index].strip()
+        if fmt is None:
+            start, end, problem = NO_TIME, NO_TIME, IssueKind.TIMECODE_TYPO
+        else:
+            if fmt not in formats:
+                formats[fmt] = raw_line
+            start, end, problem = convert_timecode(raw_start, raw_end, fmt)
         if order + 1 < len(starts):
             stop = starts[order + 1][0]
         else:
@@ -405,23 +463,35 @@ def split_entries(text, path="", log=None):
         number = entry.number
         if log is not None:
             log.note(
-                NormKind.TIMECODE_SPLIT, lines[time_index].strip(),
-                "開始 " + start + " / 結束 " + end, path, number,
+                NormKind.TIMECODE_SPLIT, raw_line,
+                "開始 " + str(start) + " / 結束 " + str(end), path, number,
             )
         if not number:
             entry.issues.append(
                 Issue(
                     IssueKind.ORPHAN_TIMECODE, path, "",
-                    "時間碼 " + code(lines[time_index].strip()) +
-                    " 沒有編號也沒有內文",
+                    "時間碼 " + code(raw_line) + " 沒有編號也沒有內文",
                 )
             )
-        if timecode_parts(end) < timecode_parts(start):
+        if problem is IssueKind.REVERSED_TIMECODE:
             entry.issues.append(
                 Issue(
-                    IssueKind.REVERSED_TIMECODE, path, number,
-                    "結束時間比開始還早",
-                    [("開始", start), ("結束", end)],
+                    problem, path, number, "結束時間比開始還早",
+                    [("開始", raw_start), ("結束", raw_end)],
+                )
+            )
+        elif problem is IssueKind.TIMECODE_MS_DIGITS:
+            entry.issues.append(
+                Issue(
+                    problem, path, number,
+                    "時間碼 " + code(raw_line) + " 的毫秒只有一位或兩位數",
+                )
+            )
+        elif problem is IssueKind.TIMECODE_TYPO:
+            entry.issues.append(
+                Issue(
+                    problem, path, number,
+                    "時間碼行 " + code(raw_line) + " 解析不了",
                 )
             )
         if order + 1 < len(starts) and stop - 1 >= 0:
@@ -435,18 +505,11 @@ def split_entries(text, path="", log=None):
         for part_entry in part_entries:
             entries.append(part_entry)
 
-    if len(formats) > 1:
-        issues.append(
-            Issue(
-                IssueKind.MIXED_TIMECODE_FORMAT, path, "",
-                "同一個檔案用了 " + "、".join(sorted(formats)),
-            )
-        )
     if UNCLEAR_UNIT_FORMAT in formats:
         issues.append(
             Issue(
                 IssueKind.UNKNOWN_TIMECODE_UNIT, path, "",
-                "連字號式時間碼沒有毫秒，單位不明，需要跟對方確認"
+                "連字號式時間碼照 分:秒:影格(30fps)換算，請對方確認"
             )
         )
     return header, entries, issues, formats

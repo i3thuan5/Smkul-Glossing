@@ -11,7 +11,7 @@ import unittest
 
 from tests import DATA
 
-from scripts.smkul.entry import IssueKind, NormKind, NormLog
+from scripts.smkul.entry import IssueKind, NO_TIME, NormKind, NormLog
 from scripts.smkul.parser import (
     assemble_entry,
     bare_form,
@@ -21,8 +21,10 @@ from scripts.smkul.parser import (
     normalize_en_dash,
     normalize_line,
     parse_text,
+    convert_timecode,
     parse_timecode,
-    timecode_parts,
+    srt_string,
+    timecode_milliseconds,
 )
 
 
@@ -37,7 +39,7 @@ def parse(name, log=None):
 
 
 class TestTimecode(unittest.TestCase):
-    """四種格式都要拆成開始/結束,而且保留原字串。"""
+    """五種寫法拆成開始、結束,轉成 SRT 字串。規格見 features/時間碼.feature。"""
 
     def test_編號與時間碼同行(self):
         got = parse_timecode("1. 0:00:00.000,0:00:01.480")
@@ -47,6 +49,165 @@ class TestTimecode(unittest.TestCase):
     def test_不是時間碼(self):
         self.assertIsNone(parse_timecode("Kiya ha, Tku ita mnswayi"))
         self.assertIsNone(parse_timecode("1."))
+
+    def test_五種寫法的格式名(self):
+        cases = [
+            ("0:00:27.880,0:00:29.567", "逗號式"),
+            ("00:00:00,000 --> 00:00:07,228", "SRT 式"),
+            ("0:01:07.227 --> 0:01:14.786", "--> 配小數點"),
+            ("0:00:00.000–0:00:05.000", "en-dash 式"),
+            ("00:04:21-00:07:05", "連字號式"),
+        ]
+        for line, name in cases:
+            with self.subTest(line=line):
+                self.assertEqual(parse_timecode(line)[3], name)
+
+    def test_五種寫法都轉成_srt_字串(self):
+        cases = [
+            ("0:00:27.880,0:00:29.567", "00:00:27,880", "00:00:29,567"),
+            ("00:00:00,000 --> 00:00:07,228", "00:00:00,000", "00:00:07,228"),
+            ("0:01:07.227 --> 0:01:14.786", "00:01:07,227", "00:01:14,786"),
+            ("0:00:00.000–0:00:05.000", "00:00:00,000", "00:00:05,000"),
+            ("00:04:21-00:07:05", "00:00:04,700", "00:00:07,167"),
+        ]
+        for line, start, end in cases:
+            with self.subTest(line=line):
+                parsed = parse_timecode(line)
+                got = convert_timecode(parsed[1], parsed[2], parsed[3])
+                self.assertEqual(got, (start, end, None))
+
+    def test_開始與結束的時位數不一樣也接受(self):
+        parsed = parse_timecode("00:01:07.227 --> 0:01:14.786")
+        got = convert_timecode(parsed[1], parsed[2], parsed[3])
+        self.assertEqual(got, ("00:01:07,227", "00:01:14,786", None))
+
+    def test_影格四捨五入成毫秒(self):
+        # 5 影格 = 166.67 毫秒 → 167;21 影格 = 700 毫秒;15 影格 = 500 毫秒。
+        self.assertEqual(timecode_milliseconds("00:07:05", "連字號式"), 7167)
+        self.assertEqual(timecode_milliseconds("00:04:21", "連字號式"), 4700)
+        self.assertEqual(timecode_milliseconds("00:00:15", "連字號式"), 500)
+        # 1 影格 = 33.33 毫秒 → 33。
+        self.assertEqual(timecode_milliseconds("00:00:01", "連字號式"), 33)
+
+    def test_srt_字串補零(self):
+        self.assertEqual(srt_string(0), "00:00:00,000")
+        self.assertEqual(srt_string(3723004), "01:02:03,004")
+
+    def test_毫秒一位或兩位數_時間不能用(self):
+        for line in ("00:01:27,53 --> 00:01:32,726",
+                     "00:03:53,733 --> 00:03:54,0",
+                     "0:00:37.380,0:00:41.70"):
+            with self.subTest(line=line):
+                parsed = parse_timecode(line)
+                got = convert_timecode(parsed[1], parsed[2], parsed[3])
+                self.assertEqual(
+                    got, (NO_TIME, NO_TIME, IssueKind.TIMECODE_MS_DIGITS))
+
+    def test_毫秒位數不對就不比先後(self):
+        # 照小數讀 12.72 > 12.272 是顛倒;位數不對就只記毫秒位數不對。
+        parsed = parse_timecode("00:01:12,72 --> 00:01:12,272")
+        got = convert_timecode(parsed[1], parsed[2], parsed[3])
+        self.assertEqual(got[2], IssueKind.TIMECODE_MS_DIGITS)
+
+    def test_結束早於開始_時間不能用(self):
+        parsed = parse_timecode("18:13:21-13:20:11")
+        got = convert_timecode(parsed[1], parsed[2], parsed[3])
+        self.assertEqual(got, (NO_TIME, NO_TIME, IssueKind.REVERSED_TIMECODE))
+
+    def test_開始等於結束不算顛倒(self):
+        parsed = parse_timecode("00:04:26,066 --> 00:04:26,066")
+        got = convert_timecode(parsed[1], parsed[2], parsed[3])
+        self.assertEqual(got, ("00:04:26,066", "00:04:26,066", None))
+
+
+class TestTimecodeInEntry(unittest.TestCase):
+    """時間碼在段裡:換算結果、問題、時間碼行打錯。"""
+
+    BODY = "kunaku\nkunaku\n我\n我\n"
+
+    def kinds_of(self, entry):
+        out = []
+        for issue in entry.issues:
+            out.append(issue.kind)
+        return out
+
+    def test_段的開始結束是_srt_字串(self):
+        corpus = parse_text("26\n0:02:09.410,0:02:12.547\n" + self.BODY)
+        entry = corpus.entries[0]
+        self.assertEqual((entry.start, entry.end),
+                         ("00:02:09,410", "00:02:12,547"))
+        self.assertEqual(entry.issues, [])
+
+    def test_毫秒位數不對_段記問題_時間是數字(self):
+        corpus = parse_text("12\n00:01:27,53 --> 00:01:32,726\n" + self.BODY)
+        entry = corpus.entries[0]
+        self.assertEqual((entry.start, entry.end), (NO_TIME, NO_TIME))
+        self.assertIsInstance(entry.start, float)
+        self.assertEqual(self.kinds_of(entry), [IssueKind.TIMECODE_MS_DIGITS])
+        self.assertIn("00:01:27,53", entry.issues[0].detail)
+
+    def test_結束早於開始_說明附原字串(self):
+        corpus = parse_text("1\n18:13:21-13:20:11\n" + self.BODY)
+        issue = corpus.entries[0].issues[0]
+        self.assertIs(issue.kind, IssueKind.REVERSED_TIMECODE)
+        self.assertEqual(
+            issue.compare, [("開始", "18:13:21"), ("結束", "13:20:11")])
+
+    def test_時間碼行打錯(self):
+        text = (
+            "174\n00:11:30,000 --> 00:11:36,534\n" + self.BODY + "\n"
+            "175\n00:11:36,534 --> 00:11:39,486—XL3G \n"
+            "vutul nu edu\nvutul nu edu\n睪丸 屬格 老鼠\n老鼠睪丸\n")
+        corpus = parse_text(text, path="t.docx")
+        self.assertEqual(len(corpus.entries), 2)
+        entry = corpus.entries[1]
+        self.assertEqual(entry.number, "175")
+        self.assertEqual((entry.start, entry.end), (NO_TIME, NO_TIME))
+        self.assertEqual(self.kinds_of(entry), [IssueKind.TIMECODE_TYPO])
+        self.assertIn("—XL3G", entry.issues[0].detail)
+        self.assertEqual(len(entry.body), 4)
+        self.assertEqual(corpus.entries[0].issues, [])
+
+    def test_時間打錯的幾種樣子(self):
+        for line in ("0:05:00.56–3,0:05:02.563", "01:4607-01:53:28",
+                     "11:38:28-11;47:16", "0:03:37.520,0:03:45.",
+                     ".0:01:05.370,0:01:07.370", "0:12:16.8102"):
+            with self.subTest(line=line):
+                corpus = parse_text("157.\n" + line + "\n" + self.BODY)
+                self.assertEqual(len(corpus.entries), 1)
+                entry = corpus.entries[0]
+                self.assertEqual(entry.number, "157")
+                self.assertEqual(
+                    self.kinds_of(entry), [IssueKind.TIMECODE_TYPO])
+
+    def test_前面不是編號行_不算時間碼行打錯(self):
+        text = (
+            "81\n00:07:13,308 --> 00:07:18,410\n" + self.BODY + "\n"
+            "82_00:07:18,410 --> 00:07:23,806\n" + self.BODY)
+        corpus = parse_text(text, path="t.docx")
+        self.assertEqual(len(corpus.entries), 1)
+        self.assertEqual(corpus.entries[0].issues, [])
+
+    def test_第一段時間碼行前面的_bom_拿掉後切得出第一段(self):
+        # 魯凱霧台 3、泰雅俚語(上):BOM 在第一段時間碼行的最前面,
+        # 前面還有檔頭與編號行。以前第一段整段被當成檔頭。
+        log = NormLog()
+        text = "3.包鳳嬌\n1.\n﻿0:00:00.000,0:00:05.580\n" + self.BODY
+        corpus = parse_text(text, path="t.docx", log=log)
+        self.assertEqual(corpus.header_notes, ["3.包鳳嬌"])
+        self.assertEqual(len(corpus.entries), 1)
+        entry = corpus.entries[0]
+        self.assertEqual((entry.number, entry.start),
+                         ("1", "00:00:00,000"))
+        self.assertEqual(entry.issues, [])
+        self.assertEqual(log.records[NormKind.BOM].count, 1)
+
+    def test_內文的數字冒號不會被當成時間碼行(self):
+        # 前一行不是編號行,就算有「數字:數字」也不是段的起頭。
+        text = "1\n0:00:01.000,0:00:02.000\nkunaku 3:20\nkunaku\n我\n我\n"
+        corpus = parse_text(text)
+        self.assertEqual(len(corpus.entries), 1)
+        self.assertEqual(corpus.entries[0].issues, [])
 
 
 class TestNormalize(unittest.TestCase):
@@ -83,7 +244,7 @@ class TestSplitEntries(unittest.TestCase):
         for issue in corpus.issues:
             kinds.append(issue.kind)
         self.assertIn(IssueKind.UNKNOWN_TIMECODE_UNIT, kinds)
-        self.assertEqual(corpus.entries[0].end, "00:04:21")
+        self.assertEqual(corpus.entries[0].end, "00:00:04,700")
 
     def test_編號同行(self):
         corpus = parse("編號同行.txt")
@@ -91,12 +252,12 @@ class TestSplitEntries(unittest.TestCase):
         self.assertEqual(corpus.entries[0].number, "1")
         self.assertEqual(corpus.entries[1].number, "2")
 
-    def test_格式中途切換會記_warning(self):
+    def test_格式中途切換不記問題(self):
         corpus = parse("格式中途切換.txt")
-        kinds = []
-        for issue in corpus.issues:
-            kinds.append(issue.kind)
-        self.assertIn(IssueKind.MIXED_TIMECODE_FORMAT, kinds)
+        self.assertGreater(len(corpus.timecode_formats), 1)
+        self.assertEqual(corpus.issues, [])
+        for entry in corpus.entries:
+            self.assertIsInstance(entry.start, str)
 
     def test_孤兒時間碼(self):
         corpus = parse("病態_孤兒時間碼.txt")
@@ -204,6 +365,18 @@ class TestSpeakers(unittest.TestCase):
             kinds.append(found)
         self.assertEqual(kinds, [
             [(IssueKind.REVERSED_TIMECODE, "114-1")], []])
+        for entry in corpus.entries:
+            self.assertEqual((entry.start, entry.end), (NO_TIME, NO_TIME))
+
+    def test_切開的段時間一樣(self):
+        text = speakers(
+            "(anema?) 電土", "K: anema", "K: 什麼", "Lj: 電土", "Lj: 電土",
+            "(那是什麼?) 電土")
+        corpus = parse_text(text, path="t.docx")
+        times = []
+        for entry in corpus.entries:
+            times.append((entry.start, entry.end))
+        self.assertEqual(times, [("00:09:55,806", "00:09:58,812")] * 2)
 
 
 class TestAssemble(unittest.TestCase):
@@ -560,9 +733,10 @@ class TestSegmentPunctuation(unittest.TestCase):
 class TestReversedTimecode(unittest.TestCase):
     """結束時間比開始還早,是打錯的。"""
 
-    def test_時間碼拆成數字(self):
-        self.assertEqual(timecode_parts("0:00:27.880"), (0, 0, 27, 880))
-        self.assertEqual(timecode_parts("00:04:21"), (0, 4, 21))
+    def test_時間碼換成總毫秒數(self):
+        self.assertEqual(timecode_milliseconds("0:00:27.880", "逗號式"), 27880)
+        self.assertEqual(timecode_milliseconds("00:04:21", "連字號式"), 4700)
+        self.assertIsNone(timecode_milliseconds("00:04:21", "逗號式"))
 
     def test_正常的時間碼沒問題(self):
         text = "1\n00:00:00-00:04:21\nkunaku\nkunaku\n我\n我\n"

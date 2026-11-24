@@ -50,7 +50,7 @@ class TestSegmentPunctuation(unittest.TestCase):
     def issues(self):
         return [
             Issue(IssueKind.SEGMENT_PUNCTUATION, "a.docx", "12", "標點"),
-            Issue(IssueKind.MIXED_TIMECODE_FORMAT, "a.docx"),
+            Issue(IssueKind.UNKNOWN_TIMECODE_UNIT, "a.docx"),
         ]
 
     def test_總覽分五級(self):

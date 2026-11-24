@@ -6,7 +6,7 @@ import unittest
 
 import yaml
 
-from scripts.smkul.entry import CorpusFile, Entry, Issue, IssueKind
+from scripts.smkul.entry import CorpusFile, Entry, Issue, IssueKind, NO_TIME
 from scripts.smkul.rules import validate
 from scripts.smkul import yamlout
 
@@ -84,6 +84,24 @@ class TestDump(unittest.TestCase):
         text = yamlout.dump(yamlout.build([build_corpus()]))
         back = yaml.safe_load(text)
         self.assertEqual(back["檔案"][0]["段"][0]["編號"], "26")
+
+    def test_時間是_srt_字串或數字_負一(self):
+        corpus = build_corpus()
+        no_time = Entry(
+            number="28", start=NO_TIME, end=NO_TIME, path="a.txt",
+            source="kunaku", segmentation="kunaku", gloss="我",
+            translation="我",
+        )
+        validate(no_time)
+        no_time.issues.append(
+            Issue(IssueKind.TIMECODE_MS_DIGITS, "a.txt", "28"))
+        corpus.entries.append(no_time)
+        back = yaml.safe_load(yamlout.dump(yamlout.build([corpus])))
+        segments = back["檔案"][0]["段"]
+        self.assertEqual(segments[0]["開始"], "00:02:09,410")
+        self.assertEqual(segments[1]["編號"], "28")
+        self.assertEqual(segments[1]["開始"], -1.0)
+        self.assertIsInstance(segments[1]["結束"], float)
 
     def test_四行各占一行(self):
         text = yamlout.dump(yamlout.build([build_corpus()]))

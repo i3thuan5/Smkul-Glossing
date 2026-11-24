@@ -43,7 +43,7 @@ class TestSections(unittest.TestCase):
         return [
             Issue(IssueKind.GLUED_LINE, "a.txt", "26", "黏著"),
             Issue(IssueKind.GLUED_LINE, "a.txt", "34", "也黏在一起"),
-            Issue(IssueKind.MIXED_TIMECODE_FORMAT, "b.txt", "", "混用"),
+            Issue(IssueKind.UNKNOWN_TIMECODE_UNIT, "b.txt", "", "單位不明"),
             Issue(IssueKind.SEGMENT_PUNCTUATION, "b.txt", "1", "標點"),
             Issue(IssueKind.CHINESE_ONLY, "b.txt", "112", "華語"),
             Issue(IssueKind.MISMATCH_ONE, "b.txt", "62", "「l」→「r」"),
@@ -265,10 +265,11 @@ class TestFormatSection(unittest.TestCase):
         self.assertIn("| 逗號式 | `0:00:02.000,0:00:04.842` | 1 |", 少)
         self.assertIn("| 逗號式 | `0:00:02.000,0:00:04.842` | 2 |", 多)
 
-    def test_連字號式註明單位不明(self):
+    def test_連字號式註明照_30fps_換算(self):
         got = report.format_section(
             self.假語料([{"連字號式": "00:00:00-00:04:21"}]))
-        self.assertIn("單位不明", got)
+        self.assertIn("照分:秒:影格（30fps）換算，待對方確認", got)
+        self.assertIn("轉成 SRT 字串", got)
 
     def test_特殊符號表與程式用同一份(self):
         from scripts.smkul.rules import SPECIAL, SPECIAL_MARKS

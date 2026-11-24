@@ -73,7 +73,7 @@ def ordered_labels(issues):
 # 問題表上方的說明:筆數怎麼算、編號對到哪一節。
 KIND_TABLE_NOTE = (
     "筆數的算法：段層級的問題一段同一種只記一筆（所以筆數就是段數）；"
-    "孤兒時間碼沒有段，以時間碼計；時間碼格式混用、時間碼單位不明以檔案計。"
+    "孤兒時間碼沒有段，以時間碼計；時間碼單位不明以檔案計。"
     "編號 N 就是「問題類型說明與例子」那一章的第 N 節。"
 )
 
@@ -328,7 +328,7 @@ def _timecode_rows(files):
     for name, count in sorted(counts.items(), key=lambda item: -item[1]):
         note = ""
         if name == "連字號式":
-            note = "沒有毫秒，單位不明，待對方確認"
+            note = "照分:秒:影格（30fps）換算，待對方確認"
         rows.append((name, code(samples[name]), count, note))
     return rows
 
@@ -345,8 +345,10 @@ def format_section(files):
     lines.append(heading("時間碼的格式", 3))
     lines.append("")
     lines.append(
-        "語料裡並存下面幾種格式，程式一律拆成「開始」「結束」兩欄並"
-        "保留原字串，不做單位換算（見 `features/時間碼.feature`）。"
+        "語料裡並存下面幾種格式，程式一律拆成「開始」「結束」兩欄，"
+        "轉成 SRT 字串（例如 `00:00:27,880`）寫進翻譯訓練YAML；"
+        "時間不能用的（毫秒位數不對、結束早於開始、時間碼行打錯），"
+        "開始、結束都記成 -1.0（見 `features/時間碼.feature`）。"
         "檔數是本次執行算出來的。")
     lines.append("")
     rows = _timecode_rows(files)

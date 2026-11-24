@@ -63,8 +63,9 @@ class IssueKind(enum.Enum):
     SYMBOL_KIND_DIFF = "詞素切割和詞素翻譯的符號不一樣"
     ROOT_BEFORE_INFIX = "詞根放在中綴前面"
     AFFIX_BEFORE_INFIX = "詞綴黏在中綴前面，切割符號在中綴後面"
-    # warning
-    MIXED_TIMECODE_FORMAT = "時間碼格式混用"
+    # 時間碼。規格見 features/時間碼.feature。
+    TIMECODE_MS_DIGITS = "時間碼毫秒位數不對"
+    TIMECODE_TYPO = "時間碼行打錯"
     UNKNOWN_TIMECODE_UNIT = "時間碼單位不明"
 
 
@@ -92,9 +93,10 @@ SEVERITY = {
     IssueKind.SEGMENT_PLUS: Severity.ERROR,
     IssueKind.MISMATCH_LONG_VOWEL: Severity.EXPORTED_ERROR,
     IssueKind.SEGMENT_PUNCTUATION: Severity.EXPORTED_ERROR,
-    # 時間碼顛倒是資料錯,但標注本身沒有問題,所以照常匯出。
+    # 時間碼的問題是資料錯,但標注本身沒有問題,所以照常匯出。
     IssueKind.REVERSED_TIMECODE: Severity.WARNING,
-    IssueKind.MIXED_TIMECODE_FORMAT: Severity.WARNING,
+    IssueKind.TIMECODE_MS_DIGITS: Severity.WARNING,
+    IssueKind.TIMECODE_TYPO: Severity.WARNING,
     IssueKind.UNKNOWN_TIMECODE_UNIT: Severity.WARNING,
     IssueKind.MISMATCH_ONE: Severity.UNSURE,
     IssueKind.MISMATCH_FEW: Severity.UNSURE,
@@ -107,6 +109,9 @@ SEVERITY = {
 
 # 不匯出翻譯訓練YAML 的嚴重度。
 NOT_EXPORTED = (Severity.ERROR, Severity.UNSURE, Severity.NOTICE)
+
+# 時間不能用的段，開始、結束記成這個數字(不是字串)。
+NO_TIME = -1.0
 
 
 def is_mismatch(kind):
@@ -169,7 +174,15 @@ KIND_WHY = {
         "內容可能已經遺失。",
     IssueKind.REVERSED_TIMECODE:
         "同一段的結束時間比開始還早。魯凱霧台 2 有 3 段是這樣，"
-        "txt 與 docx 一模一樣，所以是原始 docx 裡就打錯了。",
+        "txt 與 docx 一模一樣，所以是原始 docx 裡就打錯了。"
+        "時間不能用，翻譯訓練YAML 的開始、結束記成 -1.0。",
+    IssueKind.TIMECODE_MS_DIGITS:
+        "毫秒只有一位或兩位數，例如 `00:01:27,53`。53 可以讀成 0.53 秒，"
+        "也可以讀成省略前面 0 的 53 毫秒，程式不猜，"
+        "翻譯訓練YAML 的開始、結束記成 -1.0。請照錄音補成三位數。",
+    IssueKind.TIMECODE_TYPO:
+        "編號行的下一行看起來是時間碼，可是解析不了，例如時間碼後面"
+        "黏了字、時間打錯。段照常切，翻譯訓練YAML 的開始、結束記成 -1.0。",
     IssueKind.STRAY_LINE:
         "段內有無法歸類的行，例如只有數字的 `0000`、`136.6`。",
     IssueKind.CHINESE_ONLY:
@@ -236,12 +249,9 @@ KIND_WHY = {
     IssueKind.SYMBOL_KIND_DIFF:
         "某一個詞兩邊的切割符號個數一樣，種類或順序不一樣，"
         "例如詞素切割寫 `-=`、詞素翻譯寫 `==`。",
-    IssueKind.MIXED_TIMECODE_FORMAT:
-        "同一個檔案裡用了兩種以上的時間碼格式。程式照樣解析，"
-        "不算錯誤。",
     IssueKind.UNKNOWN_TIMECODE_UNIT:
-        "時間碼沒有毫秒，單位不明(可能是 時:分:秒，也可能是"
-        " 分:秒:frame)。程式一律保留原字串不換算。",
+        "連字號式時間碼沒有毫秒，程式照 分:秒:影格(30fps)換算成 SRT 字串。"
+        "30fps 是從資料推斷的，請對方確認。",
 }
 
 
@@ -283,11 +293,15 @@ class Word:
 
 @dataclass
 class Entry:
-    """一段語料:編號、時間碼，還有四行標註。"""
+    """一段語料:編號、時間碼，還有四行標註。
+
+    start、end 是轉好的 SRT 字串(00:00:27,880);時間不能用的是 NO_TIME。
+    規格見 features/時間碼.feature。
+    """
 
     number: str
-    start: str
-    end: str
+    start: object
+    end: object
     path: str = ""
     body: list = field(default_factory=list)
     source: str = ""
@@ -391,7 +405,8 @@ NORM_WHY = {
     NormKind.MISSING_BLANK_LINE:
         "段界以編號行與時間碼行判斷，不依賴段間空行。",
     NormKind.TIMECODE_SPLIT:
-        "四種時間碼格式統一拆成開始/結束，原字串保留不換算。",
+        "五種時間碼寫法拆成開始、結束，轉成 SRT 字串；"
+        "時間不能用的記成 -1.0。",
     NormKind.HEADER_NOTE:
         "審閱進度、採集標題這類註記不是語料，但也不能丟棄。",
 }

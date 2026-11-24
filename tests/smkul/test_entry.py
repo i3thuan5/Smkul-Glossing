@@ -37,7 +37,7 @@ class TestIssue(unittest.TestCase):
 
     def test_error_與_warning(self):
         error = Issue(IssueKind.GLUED_LINE, "a.txt", "5")
-        warning = Issue(IssueKind.MIXED_TIMECODE_FORMAT, "a.txt")
+        warning = Issue(IssueKind.UNKNOWN_TIMECODE_UNIT, "a.txt")
         self.assertTrue(error.is_error())
         self.assertFalse(warning.is_error())
 
@@ -183,7 +183,7 @@ class TestYaml(unittest.TestCase):
     def test_warning_不擋匯出(self):
         entry = self.build_entry()
         entry.issues.append(
-            Issue(IssueKind.MIXED_TIMECODE_FORMAT, "a.txt", "26")
+            Issue(IssueKind.TIMECODE_MS_DIGITS, "a.txt", "26")
         )
         self.assertTrue(entry.is_clean())
 
